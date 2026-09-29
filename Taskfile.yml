@@ -1,0 +1,106 @@
+version: "3"
+
+vars:
+  BINARY: todotil
+  BIN_DIR: bin
+  # Run golangci-lint through `go run` so it is built with this module's Go
+  # toolchain; a linter built with an older Go refuses a newer go.mod.
+  GOLANGCI_LINT: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+
+tasks:
+  default:
+    desc: Format, vet, lint, test and build
+    cmds:
+      - task: check
+      - task: build
+
+  fmt:
+    desc: Format all Go code in place
+    cmds:
+      - gofmt -w .
+
+  fmt:check:
+    desc: Fail if any Go file needs formatting
+    cmds:
+      - |
+        unformatted=$(gofmt -l .)
+        if [ -n "$unformatted" ]; then
+          echo "These files need gofmt:"; echo "$unformatted"; exit 1
+        fi
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - "{{.GOLANGCI_LINT}} run ./..."
+
+  test:
+    desc: Run unit tests with the race detector
+    cmds:
+      - go test -race -count=1 ./...
+
+  test:short:
+    desc: Run unit tests quickly (cached, no race detector)
+    cmds:
+      - go test ./...
+
+  cover:
+    desc: Run tests and report coverage per package
+    cmds:
+      - go test -cover ./...
+
+  tidy:
+    desc: Tidy go.mod and go.sum
+    cmds:
+      - go mod tidy
+
+  check:
+    desc: Format, then vet, lint and test (local workflow)
+    cmds:
+      - task: fmt
+      - task: vet
+      - task: lint
+      - task: test
+
+  ci:
+    desc: Like check, but fails on unformatted code instead of rewriting it
+    cmds:
+      - task: fmt:check
+      - task: vet
+      - task: lint
+      - task: test
+
+  build:
+    desc: Build the binary into ./bin
+    cmds:
+      - go build -trimpath -o {{.BIN_DIR}}/{{.BINARY}} .
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.BIN_DIR}}/{{.BINARY}}"
+
+  install:
+    desc: Check everything, then install todotil into $GOBIN (or $GOPATH/bin)
+    cmds:
+      - task: check
+      - go install -trimpath .
+      - |
+        bin="$(go env GOBIN)"; [ -n "$bin" ] || bin="$(go env GOPATH)/bin"
+        echo "Installed $bin/{{.BINARY}}"
+
+  run:
+    desc: Run against a throwaway home directory (never touches ~/.config/todotil)
+    cmds:
+      - mkdir -p tmp/home
+      - go run . --home tmp/home
+
+  clean:
+    desc: Remove build output and the throwaway run home
+    cmds:
+      - rm -rf {{.BIN_DIR}} tmp

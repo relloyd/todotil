@@ -1,0 +1,5 @@
+bin/
+tmp/
+*.test
+coverage.out
+.task/

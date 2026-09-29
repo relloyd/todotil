@@ -1,0 +1,23 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - misspell
+    - nilerr
+    - unconvert
+    - unparam
+    - usestdlibvars
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      # Deferred Close/Release on read paths and in tests is fine.
+      - linters: [errcheck]
+        text: "Error return value of `.*\\.(Close|Release|Remove|RemoveAll)` is not checked"
+
+formatters:
+  enable:
+    - gofmt

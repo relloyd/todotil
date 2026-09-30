@@ -379,7 +379,7 @@ func TestSettingsPane(t *testing.T) {
 	assert.Equal(t, 12, h.svc.UndoDepth)
 
 	// Rebind quit to Q.
-	for h.m.settings.items[h.m.settings.cursor].action != config.Quit {
+	for h.m.settings.current().action != config.Quit {
 		h.keys("down")
 	}
 	h.keys("enter", "Q")
@@ -515,7 +515,7 @@ func TestSmallTerminalDoesNotPanic(t *testing.T) {
 	h.add("a fairly long title that will not fit in a tiny terminal window")
 	for _, size := range [][2]int{{10, 5}, {1, 1}, {0, 0}, {200, 60}} {
 		h.send(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
-		for _, k := range []string{"1", "4", ",", "esc", "?", "esc", "enter", "esc", "a"} {
+		for _, k := range []string{"1", "4", ",", "/", "u", "enter", "esc", "esc", "?", "/", "u", "esc", "esc", "enter", "esc", "a"} {
 			h.keys(k)
 			_ = h.screen()
 		}
@@ -612,7 +612,7 @@ func TestInvalidConfigFilesAreNotOverwritten(t *testing.T) {
 	assert.NoFileExists(t, h.pathsTo.Settings())
 
 	h.keys(",")
-	for h.m.settings.items[h.m.settings.cursor].action != config.Quit {
+	for h.m.settings.current().action != config.Quit {
 		h.keys("down")
 	}
 	h.keys("enter", "Q")

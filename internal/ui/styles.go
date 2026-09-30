@@ -15,7 +15,7 @@ type styles struct {
 
 	text, muted, subtle, accent, link, warn, errorS, done      lipgloss.Style
 	title, tabActive, tabIdle, dayHeader, rule, key, badgeBase lipgloss.Style
-	dialog, dialogTitle, agent                                 lipgloss.Style
+	dialog, dialogTitle, agent, match                          lipgloss.Style
 
 	selBg, dialogBg color.Color
 }
@@ -44,6 +44,7 @@ func newStyles(p config.Palette) styles {
 		Background(c(p.Dialog)).
 		Padding(0, 1)
 	s.agent = lipgloss.NewStyle().Foreground(c(p.Journal))
+	s.match = lipgloss.NewStyle().Foreground(c(p.Accent)).Bold(true).Underline(true)
 	s.dialogTitle = lipgloss.NewStyle().Foreground(c(p.Accent)).Background(c(p.Dialog)).Bold(true)
 	return s
 }

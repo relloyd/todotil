@@ -37,6 +37,7 @@ const (
 	JumpBack      Action = "jump_back"
 	OpenSettings  Action = "settings"
 	Help          Action = "help"
+	Filter        Action = "filter"
 	Add           Action = "add"
 	AddChild      Action = "add_child"
 	Edit          Action = "edit"
@@ -99,6 +100,7 @@ var Actions = []ActionInfo{
 	{ViewHistory, GroupGlobal, "Go to History", []string{"4"}},
 	{OpenSettings, GroupGlobal, "Open settings", []string{","}},
 	{Help, GroupGlobal, "Show all key bindings", []string{"?"}},
+	{Filter, GroupGlobal, "Filter the settings or help list", []string{"/"}},
 	{Undo, GroupGlobal, "Undo last change", []string{"u", "ctrl+z"}},
 	{SelectMode, GroupGlobal, "Release the mouse for text selection", []string{"v"}},
 

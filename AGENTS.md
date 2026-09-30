@@ -76,8 +76,10 @@ internal/store            JSONL event log shared between processes (split files,
 internal/cli              agent/script subcommands, JSON output, exit codes, `help agents` guide
 internal/config           config.toml, keys.toml (Actions + KeyMap), theme.toml (palettes)
 internal/links            URL/Markdown-link detection, page-title fetcher
+internal/fuzzy            filter matching (fuzzy, by word, or exact for key bindings)
 internal/ui               Bubble Tea model: model.go (dispatch), render.go, editor.go,
-                          detail.go, settings.go (settings + help), actions.go, mouse.go, background.go
+                          detail.go, settings.go (settings + help), filter.go (the / prompt), actions.go,
+                          mouse.go, background.go
 ```
 
 Keep the dependency direction: `ui, cli → todo, store, config, links`.
@@ -229,6 +231,16 @@ Anything older than `backup_keep_days` (10) is pruned.
   change them together and run `TestMouse`.
 - Truncate plain text **before** styling (`seg` / `truncateSegs` /
   `renderRow`). Truncating styled strings can cut an OSC 8 hyperlink in half.
+- Filtering (`/`, the `filter` action) works in settings and help today and is
+  built to be reused by the main views. `filterState` is the prompt, which takes
+  over the status line. `matchRow` (built on `fuzzy.MatchFields`) matches a row's
+  fields. Key bindings must match whole, ignoring case, so `ctrl+x` finds a binding
+  but `ctrl` doesn't. Short labels match fuzzily and sentences by word, because a
+  loose subsequence matches almost any sentence. Filtered panes keep a list of shown rows (`settingsState.shown`).
+  The cursor, scrolling and mouse hit-testing index into that list, not `items`.
+  `esc` clears an applied filter before it closes anything.
+  Rebinding a filtered row re-highlights it but keeps it shown, so the cursor
+  doesn't jump to another setting.
 - Status messages: `info` (4s), `warn`/`fail` (10s). Use `fail` for errors. It
   shows refusals such as `ErrJournalDone` as warnings and real failures in red.
 - Don't produce a status message *and* then overwrite it. Command
@@ -293,4 +305,5 @@ Anything older than `backup_keep_days` (10) is pruned.
   hangs directly off its note.
 - Optional hidden anchors in note bodies (`<!-- id -->`), if position and
   fuzzy matching turn out to be too weak in practice.
-- A search over History.
+- A search over History, and `/` filtering in the main views (reuse
+  `filterState` and `internal/fuzzy`; titles fuzzy, bodies by word).

@@ -37,7 +37,7 @@ func (m *Model) handleClick(ms tea.Mouse) tea.Cmd {
 		}
 	case modeSettings:
 		i := m.settings.offset + line
-		if i < len(m.settings.items) && m.settings.items[i].header == "" {
+		if i < len(m.settings.shown) && !m.settings.isHeader(i) {
 			again := i == m.settings.cursor && time.Since(m.lastClickAt) < doubleClick
 			m.settings.cursor = i
 			m.lastClickAt = time.Now()

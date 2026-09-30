@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/atotto/clipboard"
 
+	"github.com/relloyd/todotil/internal/cli"
 	"github.com/relloyd/todotil/internal/config"
 	"github.com/relloyd/todotil/internal/links"
 	"github.com/relloyd/todotil/internal/store"
@@ -19,33 +20,63 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "todotil:", err)
-		os.Exit(1)
-	}
+	os.Exit(run())
 }
 
-func run() error {
+func run() int {
 	defHome, err := config.DefaultHome()
 	if err != nil {
-		return err
+		fmt.Fprintln(os.Stderr, "todotil:", err)
+		return 1
 	}
 	home := flag.String("home", defHome, "app home directory (config, data and backups)")
+	flag.Usage = func() {
+		cli.Run(cli.Env{Stdout: os.Stderr}, []string{"help"})
+	}
 	flag.Parse()
-
 	paths := config.Paths{Home: *home}
+
+	if err := prepare(paths); err != nil {
+		fmt.Fprintln(os.Stderr, "todotil:", err)
+		return 1
+	}
+	if args := flag.Args(); len(args) > 0 {
+		if !cli.IsCommand(args[0]) && args[0] != "-h" && args[0] != "--help" {
+			fmt.Fprintf(os.Stderr, "todotil: unknown command %q\n", args[0])
+			flag.Usage()
+			return cli.ExitUsage
+		}
+		return cli.Run(cli.Env{
+			Paths:  paths,
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+			Getenv: os.Getenv,
+		}, args)
+	}
+	if err := runTUI(paths); err != nil {
+		fmt.Fprintln(os.Stderr, "todotil:", err)
+		return 1
+	}
+	return 0
+}
+
+// prepare creates the home directory and refuses to run next to an older
+// binary that still holds a session-long lock.
+func prepare(paths config.Paths) error {
 	if err := os.MkdirAll(paths.Home, 0o700); err != nil {
 		return err
 	}
-	lock, err := store.AcquireLock(paths.Lock())
-	if errors.Is(err, store.ErrLocked) {
-		return fmt.Errorf("%w (lock: %s)", err, paths.Lock())
-	}
-	if err != nil {
+	if err := store.CheckLegacyLock(paths.Lock()); err != nil {
+		if errors.Is(err, store.ErrLocked) {
+			return fmt.Errorf("%w (lock: %s)", err, paths.Lock())
+		}
 		return err
 	}
-	defer lock.Release()
+	return nil
+}
 
+func runTUI(paths config.Paths) error {
 	// Config problems are reported in the status bar rather than stopping
 	// the app; defaults are used instead.
 	var warnings []string

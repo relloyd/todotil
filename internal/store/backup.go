@@ -12,10 +12,18 @@ import (
 const backupLayout = "2006-01-02T150405"
 
 // Backup copies the log files into a new timestamped directory under
-// backupDir. Appends are blocked while copying so the copy is consistent.
+// backupDir. The data lock is held while copying so the copy is consistent.
 func (l *Log) Backup(backupDir string, now time.Time) (string, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	var path string
+	err := l.locked(func() error {
+		var err error
+		path, err = l.backup(backupDir, now)
+		return err
+	})
+	return path, err
+}
+
+func (l *Log) backup(backupDir string, now time.Time) (string, error) {
 	if err := os.MkdirAll(backupDir, 0o700); err != nil {
 		return "", err
 	}

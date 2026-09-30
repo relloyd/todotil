@@ -11,17 +11,41 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// memLog is an in-memory Log. Events in pending were "written by another
+// process" and are handed to the next Update or Poll.
 type memLog struct {
-	events []Event
-	fail   error
+	events  []Event
+	pending []Event
+	fail    error
+	// race, if set, runs once at the start of the next Update, simulating
+	// another process writing between computing a change and committing it.
+	race func()
 }
 
-func (l *memLog) Append(evs []Event) error {
+func (l *memLog) Update(fn func([]Event) ([]Event, error)) error {
 	if l.fail != nil {
 		return l.fail
 	}
-	l.events = append(l.events, evs...)
+	if r := l.race; r != nil {
+		l.race = nil
+		r()
+	}
+	foreign := l.takePending()
+	out, err := fn(foreign)
+	if err != nil {
+		return err
+	}
+	l.events = append(l.events, out...)
 	return nil
+}
+
+func (l *memLog) Poll() ([]Event, error) { return l.takePending(), nil }
+
+func (l *memLog) takePending() []Event {
+	p := l.pending
+	l.pending = nil
+	l.events = append(l.events, p...)
+	return p
 }
 
 var t0 = time.Date(2026, 9, 29, 9, 0, 0, 0, time.Local)

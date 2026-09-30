@@ -2,7 +2,10 @@ package todo
 
 import (
 	"cmp"
+	"errors"
+	"fmt"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -11,8 +14,10 @@ type Event struct {
 	Time time.Time `json:"t"`
 	Tx   uint64    `json:"tx,omitempty"`
 	Op   Op        `json:"op"`
-	Item *Item     `json:"item,omitempty"`
-	ID   string    `json:"id,omitempty"`
+	// By is the agent that made the change; empty means the TUI user.
+	By   string `json:"by,omitempty"`
+	Item *Item  `json:"item,omitempty"`
+	ID   string `json:"id,omitempty"`
 	// URL and Title carry a cached link title for OpLink.
 	URL   string `json:"url,omitempty"`
 	Title string `json:"title,omitempty"`
@@ -35,6 +40,7 @@ type Board struct {
 	items    map[string]*Item
 	children map[string][]string
 	links    map[string]string
+	actor    map[string]string // who last changed each item
 	lastTx   uint64
 }
 
@@ -44,6 +50,7 @@ func NewBoard() *Board {
 		items:    map[string]*Item{},
 		children: map[string][]string{},
 		links:    map[string]string{},
+		actor:    map[string]string{},
 	}
 }
 
@@ -54,9 +61,11 @@ func (b *Board) Replay(e Event) {
 	case OpPut:
 		if e.Item != nil && e.Item.ID != "" {
 			b.put(e.Item.Clone())
+			b.actor[e.Item.ID] = e.By
 		}
 	case OpDel:
 		b.del(e.ID)
+		b.actor[e.ID] = e.By
 	case OpLink:
 		b.links[e.URL] = e.Title
 	}
@@ -68,6 +77,99 @@ func (b *Board) Get(id string) *Item {
 		return nil
 	}
 	return b.items[id]
+}
+
+// LastActor returns who last changed an item: an agent name, or "" for
+// the TUI user.
+func (b *Board) LastActor(id string) string { return b.actor[id] }
+
+// ErrAmbiguous is returned when an ID prefix matches several items.
+var ErrAmbiguous = errors.New("ambiguous ID prefix")
+
+// MinPrefix is the shortest ID prefix accepted.
+const MinPrefix = 6
+
+// Resolve finds an item by full ID or unique prefix of at least MinPrefix
+// characters.
+func (b *Board) Resolve(ref string) (*Item, error) {
+	if it := b.items[ref]; it != nil {
+		return it, nil
+	}
+	if len(ref) < MinPrefix {
+		return nil, fmt.Errorf("%w: %q", ErrNotFound, ref)
+	}
+	var found *Item
+	for id, it := range b.items {
+		if strings.HasPrefix(id, ref) {
+			if found != nil {
+				return nil, fmt.Errorf("%w: %q", ErrAmbiguous, ref)
+			}
+			found = it
+		}
+	}
+	if found == nil {
+		return nil, fmt.Errorf("%w: %q", ErrNotFound, ref)
+	}
+	return found, nil
+}
+
+// ShortIDLen is the shortest abbreviation ShortIDs produces.
+const ShortIDLen = 8
+
+// ShortIDs abbreviates every item ID to its shortest unique prefix of at
+// least ShortIDLen characters, like git's abbreviated hashes.
+func (b *Board) ShortIDs() map[string]string {
+	ids := make([]string, 0, len(b.items))
+	for id := range b.items {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	common := func(a, c string) int {
+		n := 0
+		for n < len(a) && n < len(c) && a[n] == c[n] {
+			n++
+		}
+		return n
+	}
+	out := make(map[string]string, len(ids))
+	for i, id := range ids {
+		n := ShortIDLen
+		if i > 0 {
+			n = max(n, common(id, ids[i-1])+1)
+		}
+		if i+1 < len(ids) {
+			n = max(n, common(id, ids[i+1])+1)
+		}
+		out[id] = id[:min(n, len(id))]
+	}
+	return out
+}
+
+// FindClaim finds a claim, active or ended, by full ID or unique prefix.
+func (b *Board) FindClaim(ref string) (*Item, Claim, error) {
+	var (
+		item  *Item
+		claim Claim
+		n     int
+	)
+	for _, it := range b.items {
+		for _, c := range it.Claims {
+			if c.ID == ref {
+				return it, c, nil
+			}
+			if len(ref) >= MinPrefix && strings.HasPrefix(c.ID, ref) {
+				item, claim = it, c
+				n++
+			}
+		}
+	}
+	switch n {
+	case 0:
+		return nil, Claim{}, fmt.Errorf("%w: claim %q", ErrNotFound, ref)
+	case 1:
+		return item, claim, nil
+	}
+	return nil, Claim{}, fmt.Errorf("%w: claim %q", ErrAmbiguous, ref)
 }
 
 // Len returns the number of items.
@@ -128,6 +230,7 @@ func (b *Board) clone() *Board {
 		items:    make(map[string]*Item, len(b.items)),
 		children: make(map[string][]string, len(b.children)),
 		links:    b.links,
+		actor:    b.actor,
 		lastTx:   b.lastTx,
 	}
 	for k, v := range b.items {

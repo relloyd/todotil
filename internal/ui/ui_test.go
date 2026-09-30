@@ -557,3 +557,130 @@ func TestInvalidConfigFilesAreNotOverwritten(t *testing.T) {
 	assert.NoFileExists(t, h.pathsTo.Keys())
 	assert.Equal(t, []string{"Q"}, h.m.Keys[config.Quit], "still applies for this session")
 }
+
+// sharedHarness wires the TUI and an "agent" service to the same on-disk
+// log, as two processes would be.
+func newSharedHarness(t *testing.T) (*harness, *todo.Service) {
+	t.Helper()
+	h := newHarness(t)
+	open := func(actor string) *todo.Service {
+		log, res, err := store.Open(h.pathsTo.Data())
+		require.NoError(t, err)
+		b := todo.NewBoard()
+		for _, e := range res.Events {
+			b.Replay(e)
+		}
+		s := todo.NewService(b, log, 10)
+		s.Actor = actor
+		return s
+	}
+	tui := open("")
+	tui.Now = h.svc.Now
+	h.svc = tui
+	h.m.Service = tui
+	h.m.refresh()
+	return h, open("bot")
+}
+
+func (h *harness) sync() {
+	h.t.Helper()
+	h.send(syncTickMsg{})
+}
+
+func TestAgentChangesAppearLive(t *testing.T) {
+	h, agent := newSharedHarness(t)
+	h.add("fix login")
+	h.keys("m", "x") // user parks it in Next
+
+	mustSync(t, agent)
+	res, err := agent.Claim(todo.Target{Position: 1}, todo.Next, false)
+	require.NoError(t, err)
+	_, err = agent.Add("agent follow-up", todo.Now, "", todo.Now)
+	require.NoError(t, err)
+
+	assert.Empty(t, h.viewTitles(tabNow), "not visible until the next sync tick")
+	h.sync()
+	assert.Equal(t, []string{"fix login", "agent follow-up"}, h.viewTitles(tabNow))
+	s := h.screen()
+	assert.Contains(t, s, "@bot <1m")
+	assert.Contains(t, s, "✦ agent follow-up")
+
+	// The user's undo of the move is refused: the agent has since claimed it.
+	h.keys("u")
+	assert.Contains(t, h.screen(), "Can't undo move to Next: bot changed it since")
+
+	// Notes and claims show in the detail view.
+	_, _, err = agent.AddNote(res.Claim.ID, "reproduced the bug")
+	require.NoError(t, err)
+	h.sync()
+	h.keys("g", "enter")
+	s = h.screen()
+	assert.Contains(t, s, "● claimed by bot")
+	assert.Contains(t, s, "reproduced the bug")
+	assert.Contains(t, s, "→ active")
+	h.keys("esc")
+
+	// Done by the agent shows in History.
+	_, err = agent.Finish(res.Claim.ID, false, "")
+	require.NoError(t, err)
+	h.sync()
+	h.keys("4")
+	assert.Contains(t, h.screen(), "done by bot")
+}
+
+func TestUnassign(t *testing.T) {
+	h, agent := newSharedHarness(t)
+	h.add("task")
+	mustSync(t, agent)
+	res, err := agent.Claim(todo.Target{Next: true}, todo.Now, false)
+	require.NoError(t, err)
+	h.sync()
+
+	h.keys("g", "U")
+	assert.Contains(t, h.screen(), "Unassigned bot from “task”")
+	assert.NotContains(t, h.screen(), "@bot")
+
+	_, err = agent.Finish(res.Claim.ID, false, "")
+	var ended *todo.ClaimEndedError
+	require.ErrorAs(t, err, &ended)
+	assert.Equal(t, todo.EndUnassigned, ended.Claim.End)
+
+	h.keys("U")
+	assert.Contains(t, h.screen(), "Item isn't claimed")
+}
+
+func TestEditConflictWarnsBeforeOverwriting(t *testing.T) {
+	h, agent := newSharedHarness(t)
+	h.add("meeting\n\n- [ ] send notes")
+	h.keys("g", "e")
+	require.NotNil(t, h.m.editor)
+
+	// While the dialog is open, an agent completes the checkbox child,
+	// which ticks the line in this note's body.
+	mustSync(t, agent)
+	var noteID string
+	for _, it := range agent.Board().All() {
+		if it.Title == "meeting" {
+			noteID = it.ID
+		}
+	}
+	kid := agent.Board().Children(noteID)
+	require.NotEmpty(t, kid)
+	res, err := agent.Claim(todo.Target{ID: kid[0].ID}, todo.Now, false)
+	require.NoError(t, err)
+	_, err = agent.Finish(res.Claim.ID, false, "")
+	require.NoError(t, err)
+
+	h.keys("enter")
+	require.NotNil(t, h.m.editor, "first save is held back")
+	assert.Contains(t, h.screen(), "bot changed this text since you opened it")
+
+	h.keys("enter")
+	assert.Nil(t, h.m.editor, "second save overwrites")
+}
+
+func mustSync(t *testing.T, s *todo.Service) {
+	t.Helper()
+	_, err := s.Sync()
+	require.NoError(t, err)
+}

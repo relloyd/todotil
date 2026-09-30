@@ -1,11 +1,16 @@
 package store
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/gofrs/flock"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,16 +101,101 @@ func TestLogRejectsNewerFormat(t *testing.T) {
 	assert.ErrorContains(t, err, "newer")
 }
 
-func TestLock(t *testing.T) {
+func TestLegacyLock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "todotil.lock")
-	l1, err := AcquireLock(path)
+	require.NoError(t, CheckLegacyLock(path), "nobody holds it")
+	old := flock.New(path)
+	ok, err := old.TryLock()
 	require.NoError(t, err)
-	_, err = AcquireLock(path)
-	assert.ErrorIs(t, err, ErrLocked)
-	require.NoError(t, l1.Release())
-	l2, err := AcquireLock(path)
+	require.True(t, ok)
+	assert.ErrorIs(t, CheckLegacyLock(path), ErrLocked)
+	require.NoError(t, old.Unlock())
+	assert.NoError(t, CheckLegacyLock(path))
+}
+
+func TestSharedWritersSeeEachOther(t *testing.T) {
+	dir := t.TempDir()
+	a, _, err := Open(dir)
 	require.NoError(t, err)
-	require.NoError(t, l2.Release())
+	b, _, err := Open(dir)
+	require.NoError(t, err)
+
+	require.NoError(t, a.Append([]todo.Event{put("from-a")}))
+	evs, err := b.Poll()
+	require.NoError(t, err)
+	require.Len(t, evs, 1)
+	assert.Equal(t, "from-a", evs[0].Item.ID)
+
+	evs, err = b.Poll()
+	require.NoError(t, err)
+	assert.Empty(t, evs, "nothing new")
+
+	// b's update is handed a's newer write before it appends.
+	require.NoError(t, a.Append([]todo.Event{put("a2")}))
+	var seen []string
+	require.NoError(t, b.Update(func(foreign []todo.Event) ([]todo.Event, error) {
+		for _, e := range foreign {
+			seen = append(seen, e.Item.ID)
+		}
+		return []todo.Event{put("from-b")}, nil
+	}))
+	assert.Equal(t, []string{"a2"}, seen)
+
+	evs, err = a.Poll()
+	require.NoError(t, err)
+	require.Len(t, evs, 1)
+	assert.Equal(t, "from-b", evs[0].Item.ID)
+
+	// A failing update writes nothing.
+	require.Error(t, a.Update(func([]todo.Event) ([]todo.Event, error) {
+		return []todo.Event{put("never")}, errors.New("nope")
+	}))
+	_, res, err := Open(dir)
+	require.NoError(t, err)
+	assert.Len(t, res.Events, 3)
+}
+
+func TestConcurrentWritersInterleaveWholeBatches(t *testing.T) {
+	dir := t.TempDir()
+	const writers, batches = 4, 25
+	var wg sync.WaitGroup
+	for w := range writers {
+		l, _, err := Open(dir)
+		require.NoError(t, err)
+		l.MaxSize = 2000 // force rotations under contention
+		wg.Go(func() {
+			for i := range batches {
+				id := fmt.Sprintf("w%d-%d", w, i)
+				assert.NoError(t, l.Append([]todo.Event{put(id + "a"), put(id + "b")}))
+			}
+		})
+	}
+	wg.Wait()
+	_, res, err := Open(dir)
+	require.NoError(t, err)
+	assert.Zero(t, res.Skipped)
+	require.Len(t, res.Events, writers*batches*2)
+	for i := 0; i < len(res.Events); i += 2 {
+		a, b := res.Events[i].Item.ID, res.Events[i+1].Item.ID
+		assert.Equal(t, a[:len(a)-1], b[:len(b)-1], "batches are never split")
+	}
+}
+
+func TestUpgradeStartsNewFile(t *testing.T) {
+	dir := t.TempDir()
+	v1 := `{"op":"meta","v":1}` + "\n" + `{"op":"put","item":{"id":"old","title":"old","state":"now"}}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "events-000001.jsonl"), []byte(v1), 0o600))
+	l, res, err := Open(dir)
+	require.NoError(t, err)
+	assert.Len(t, res.Events, 1)
+	require.NoError(t, l.Append([]todo.Event{put("new")}))
+	files, err := logFiles(dir)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"events-000001.jsonl", "events-000002.jsonl"}, files)
+	b, err := os.ReadFile(filepath.Join(dir, files[1]))
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(string(b), `{"t":`))
+	assert.Contains(t, string(b), `"v":2`)
 }
 
 func TestBackupAndPrune(t *testing.T) {

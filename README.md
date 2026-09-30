@@ -19,11 +19,26 @@ todotil        # data lives in ~/.config/todotil (override with --home or TODOTI
   instead. `enter` saves, `shift+enter` or `ctrl+j` adds a new line.
 - **Work:** `x` done · `m` then `n`/`x`/`l`/`j` to move · `e` edit · `enter` details
   · `>`/`<` indent/outdent · `shift+↑/↓` or `alt+k/j` reorder · `K`/`J` top/bottom
-  · `u` undo.
+  · `u` undo · `U` unassign an agent.
 - **Navigate:** `j`/`k`, `g`/`G`, `p` parent, `c` first child, `ctrl+o` back.
 - **History:** `s` switches between created and completed date, `r` reverses the order.
 - **Copy:** `y` copies the item as Markdown. `v` releases the mouse so you can
   select text.
+
+## AI agents
+
+Agents can take work from your lists and report back while the TUI is open:
+
+```sh
+todotil claim next --as claude-1 --json      # returns a claim ID like c-3f9a…
+todotil note  c-3f9a… "tests passing" --json
+todotil done  c-3f9a… --json
+```
+
+Claimed items show `@claude-1 2h` in the lists, and `U` unassigns one.
+`todotil help agents` prints instructions to paste into another repo's
+`AGENTS.md`. The full interface and its exit codes are in
+[docs/agent-cli.md](docs/agent-cli.md).
 
 ## Files
 

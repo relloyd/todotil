@@ -108,6 +108,15 @@ func (m *Model) toggleDone(it *todo.Item) tea.Cmd {
 	return m.info("Completed " + quote(it.Title) + m.undoHint())
 }
 
+func (m *Model) unassign(it *todo.Item) tea.Cmd {
+	c, err := m.Service.Unassign(it.ID)
+	if err != nil {
+		return m.fail(err)
+	}
+	m.refresh()
+	return m.info("Unassigned " + c.Assignee + " from " + quote(it.Title) + m.undoHint())
+}
+
 func (m *Model) askDelete(it *todo.Item) tea.Cmd {
 	id, title := it.ID, it.Title
 	prompt := "Delete " + quote(title) + "?"
@@ -299,6 +308,16 @@ func itemMarkdown(b *todo.Board, it *todo.Item) string {
 		}
 	}
 	walk(it.ID, 0)
+	if len(it.Notes) > 0 {
+		sb.WriteString("\n\nNotes:\n")
+		for _, n := range it.Notes {
+			who := n.By
+			if who == "" {
+				who = "you"
+			}
+			fmt.Fprintf(&sb, "- %s %s: %s\n", n.At.Local().Format("2006-01-02 15:04"), who, n.Text)
+		}
+	}
 	return strings.TrimRight(sb.String(), "\n")
 }
 

@@ -273,17 +273,31 @@ func (m *Model) itemLine(r todo.Row, selected, history bool) string {
 	} else if r.Depth == 0 && !history {
 		titleSt = titleSt.Bold(true)
 	}
+	if it.CreatedBy != "" {
+		left = append(left, seg{text: agentMark, st: m.st.agent})
+	}
 	left = append(left, m.textSegs(it.Title, titleSt)...)
-	if it.Body != "" {
+	if it.Body != "" || len(it.Notes) > 0 {
 		left = append(left, seg{text: " ≡", st: m.st.subtle})
 	}
 	var right []seg
+	if c := it.ActiveClaim(); c != nil {
+		right = append(right, m.claimBadge(c), seg{text: "  ", st: m.st.text})
+	}
 	if history {
-		right = m.historyMeta(it)
+		right = append(right, m.historyMeta(it)...)
 	} else {
-		right = []seg{{text: age(m.Now().Sub(it.Created)) + " ", st: m.st.subtle}}
+		right = append(right, seg{text: age(m.Now().Sub(it.Created)) + " ", st: m.st.subtle})
 	}
 	return renderRow(left, right, m.width, bg)
+}
+
+// agentMark flags items an agent created.
+const agentMark = "✦ "
+
+// claimBadge shows who holds an item and for how long, e.g. "@claude-1 2h".
+func (m *Model) claimBadge(c *todo.Claim) seg {
+	return seg{text: "@" + c.Assignee + " " + age(m.Now().Sub(c.At)), st: m.st.agent}
 }
 
 func (m *Model) historyMeta(it *todo.Item) []seg {
@@ -298,9 +312,14 @@ func (m *Model) historyMeta(it *todo.Item) []seg {
 	}
 	out = append(out, seg{text: created, st: m.st.muted})
 	if it.Completed != nil {
-		done := "done " + it.Completed.Local().Format("2 Jan 2006 15:04")
+		done := "done "
+		if it.CompletedBy != "" {
+			done += "by " + it.CompletedBy + " "
+		}
 		if byCompleted {
-			done = "done " + it.Completed.Local().Format("15:04")
+			done += it.Completed.Local().Format("15:04")
+		} else {
+			done += it.Completed.Local().Format("2 Jan 2006 15:04")
 		}
 		out = append(out, seg{text: " · ", st: m.st.subtle}, seg{text: done, st: m.st.done})
 	}
@@ -311,7 +330,7 @@ func (m *Model) historyMeta(it *todo.Item) []seg {
 func age(d time.Duration) string {
 	switch {
 	case d < time.Minute:
-		return "now"
+		return "<1m" // not "now", which reads as the state
 	case d < time.Hour:
 		return fmt.Sprintf("%dm", int(d.Minutes()))
 	case d < 24*time.Hour:

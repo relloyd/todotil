@@ -33,7 +33,10 @@ func (p Paths) Keys() string     { return filepath.Join(p.Home, "keys.toml") }
 func (p Paths) Theme() string    { return filepath.Join(p.Home, "theme.toml") }
 func (p Paths) Data() string     { return filepath.Join(p.Home, "data") }
 func (p Paths) Backups() string  { return filepath.Join(p.Home, "backups") }
-func (p Paths) Lock() string     { return filepath.Join(p.Home, "todotil.lock") }
+
+// Lock is the session lock held by versions before the agent CLI. Newer
+// versions only check it, to avoid running alongside an old binary.
+func (p Paths) Lock() string { return filepath.Join(p.Home, "todotil.lock") }
 
 // History holds the History view's sort preference.
 type History struct {

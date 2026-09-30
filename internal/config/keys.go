@@ -45,6 +45,7 @@ const (
 	Delete       Action = "delete"
 	Undo         Action = "undo"
 	Copy         Action = "copy"
+	Unassign     Action = "unassign"
 	SelectMode   Action = "select_mode"
 	ItemUp       Action = "item_up"
 	ItemDown     Action = "item_down"
@@ -116,6 +117,7 @@ var Actions = []ActionInfo{
 	{Done, GroupList, "Toggle done", []string{"x", "space"}},
 	{Delete, GroupList, "Delete the selected item", []string{"D"}},
 	{Copy, GroupList, "Copy item (and children) to the clipboard", []string{"y"}},
+	{Unassign, GroupList, "Unassign: end an agent's claim", []string{"U"}},
 	{ItemUp, GroupList, "Move item up", []string{"shift+up", "alt+k"}},
 	{ItemDown, GroupList, "Move item down", []string{"shift+down", "alt+j"}},
 	{ItemTop, GroupList, "Send item to top", []string{"K"}},

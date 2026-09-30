@@ -143,3 +143,30 @@ func (m *Model) handleBackupTick(now time.Time) tea.Cmd {
 	log, dir, keep := m.Log, m.Paths.Backups(), m.Settings.BackupKeepDays
 	return tea.Batch(next, func() tea.Msg { return runBackup(log, dir, keep, now) })
 }
+
+type syncTickMsg struct{}
+
+// syncInterval is how often the TUI looks for changes made by agents.
+const syncInterval = 500 * time.Millisecond
+
+func (m *Model) syncTick() tea.Cmd {
+	return tea.Tick(syncInterval, func(time.Time) tea.Msg { return syncTickMsg{} })
+}
+
+// handleSyncTick reloads changes other processes wrote to the log.
+func (m *Model) handleSyncTick() tea.Cmd {
+	next := m.syncTick()
+	changed, err := m.Service.Sync()
+	if err != nil {
+		if err.Error() == m.lastSyncErr {
+			return next
+		}
+		m.lastSyncErr = err.Error()
+		return tea.Batch(next, m.fail(err))
+	}
+	m.lastSyncErr = ""
+	if changed {
+		m.refresh()
+	}
+	return next
+}

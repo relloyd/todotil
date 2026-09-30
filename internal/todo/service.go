@@ -7,9 +7,13 @@ import (
 	"time"
 )
 
-// Log persists events. Append must be durable before it returns.
+// Log persists events and is shared with other processes.
 type Log interface {
-	Append(events []Event) error
+	// Update locks the log, passes fn the events other processes appended
+	// since the last read, and durably appends the events fn returns.
+	Update(fn func(foreign []Event) ([]Event, error)) error
+	// Poll returns events other processes appended since the last read.
+	Poll() ([]Event, error)
 }
 
 // Errors returned by Service operations.
@@ -21,14 +25,40 @@ var (
 	ErrNotInView     = errors.New("item is not in an active view")
 	ErrCannotIndent  = errors.New("nothing above to indent under")
 	ErrCannotOutdent = errors.New("already at the top level")
+	// ErrConflict means other processes kept changing the same items and
+	// the operation gave up retrying.
+	ErrConflict = errors.New("the items changed in another process at the same time; try again")
 )
+
+// errRetry signals that a commit lost a race and should be recomputed.
+var errRetry = errors.New("retry")
+
+const maxRetries = 8
 
 // NeedsConfirmError is returned by Complete when the item has open
 // descendants and completion was not forced.
-type NeedsConfirmError struct{ Open int }
+type NeedsConfirmError struct {
+	Open     int
+	Children []*Item
+}
 
 func (e *NeedsConfirmError) Error() string {
 	return fmt.Sprintf("item has %d open children", e.Open)
+}
+
+// UndoConflictError is returned when something else changed an item since
+// the action being undone. The undo entry is dropped.
+type UndoConflictError struct {
+	Label string
+	By    string
+}
+
+func (e *UndoConflictError) Error() string {
+	who := "something else"
+	if e.By != "" {
+		who = e.By
+	}
+	return fmt.Sprintf("can't undo %s: %s changed it since", e.Label, who)
 }
 
 // Mutation is one item's change within a transaction. A nil Before is a
@@ -73,11 +103,14 @@ type Service struct {
 	UndoDepth int
 	Now       func() time.Time
 	NewID     func(time.Time) string
+	NewClaim  func(time.Time) string
+	// Actor names who is making changes: an agent name, or "" for the user.
+	Actor string
 }
 
 // NewService wraps a board replayed from log.
 func NewService(b *Board, log Log, undoDepth int) *Service {
-	return &Service{board: b, log: log, UndoDepth: undoDepth, Now: time.Now, NewID: NewID}
+	return &Service{board: b, log: log, UndoDepth: undoDepth, Now: time.Now, NewID: NewID, NewClaim: NewClaimID}
 }
 
 // Board returns the current state. Callers must not modify it.
@@ -85,6 +118,19 @@ func (s *Service) Board() *Board { return s.board }
 
 // CanUndo reports whether there is anything to undo.
 func (s *Service) CanUndo() bool { return len(s.undo) > 0 }
+
+// Sync applies changes other processes have written. It reports whether
+// anything changed.
+func (s *Service) Sync() (bool, error) {
+	if s.log == nil {
+		return false, nil
+	}
+	evs, err := s.log.Poll()
+	for _, e := range evs {
+		s.board.Replay(e)
+	}
+	return len(evs) > 0, err
+}
 
 // tx stages changes on a copy of the board.
 type tx struct {
@@ -120,8 +166,31 @@ func (t *tx) del(id string) {
 
 func (t *tx) nextOrder() float64 { return t.w.MaxOrder() + 1 }
 
-// commit persists the staged changes and makes them current. When record is
-// true the change is pushed onto the undo stack.
+// run applies fn as one transaction against the latest state. If another
+// process changes a touched item between computing and writing, fn is run
+// again on the new state.
+func (s *Service) run(label string, record bool, fn func(t *tx) error) error {
+	for attempt := 0; ; attempt++ {
+		if _, err := s.Sync(); err != nil {
+			return err
+		}
+		t := s.begin(label)
+		if err := fn(t); err != nil {
+			return err
+		}
+		err := s.commit(t, record)
+		if !errors.Is(err, errRetry) {
+			return err
+		}
+		if attempt == maxRetries {
+			return ErrConflict
+		}
+	}
+}
+
+// commit persists the staged changes. Holding the log lock it first
+// replays foreign events; if any touched item changed underneath, it
+// returns errRetry and writes nothing.
 func (s *Service) commit(t *tx, record bool) error {
 	var muts []Mutation
 	for _, id := range t.touched {
@@ -134,24 +203,55 @@ func (s *Service) commit(t *tx, record bool) error {
 	if len(muts) == 0 {
 		return nil
 	}
-	txID := s.board.lastTx + 1
-	events := make([]Event, 0, len(muts))
-	for _, m := range muts {
-		e := Event{Time: t.now, Tx: txID}
-		if m.After == nil {
-			e.Op, e.ID = OpDel, m.Before.ID
-		} else {
-			e.Op, e.Item = OpPut, m.After
+	var txID uint64
+	apply := func(foreign []Event) ([]Event, error) {
+		for _, e := range foreign {
+			s.board.Replay(e)
 		}
-		events = append(events, e)
+		for _, m := range muts {
+			id := m.After
+			if id == nil {
+				id = m.Before
+			}
+			if s.board.items[id.ID] != m.Before {
+				return nil, errRetry
+			}
+		}
+		txID = s.board.lastTx + 1
+		events := make([]Event, 0, len(muts))
+		for _, m := range muts {
+			e := Event{Time: t.now, Tx: txID, By: s.Actor}
+			if m.After == nil {
+				e.Op, e.ID = OpDel, m.Before.ID
+			} else {
+				e.Op, e.Item = OpPut, m.After
+			}
+			events = append(events, e)
+		}
+		return events, nil
 	}
+	var err error
 	if s.log != nil {
-		if err := s.log.Append(events); err != nil {
-			return fmt.Errorf("saving: %w", err)
+		err = s.log.Update(apply)
+	} else {
+		_, err = apply(nil)
+	}
+	if err != nil {
+		if errors.Is(err, errRetry) {
+			return err
+		}
+		return fmt.Errorf("saving: %w", err)
+	}
+	for _, m := range muts {
+		if m.After == nil {
+			s.board.del(m.Before.ID)
+			s.board.actor[m.Before.ID] = s.Actor
+		} else {
+			s.board.put(m.After)
+			s.board.actor[m.After.ID] = s.Actor
 		}
 	}
-	t.w.lastTx = txID
-	s.board = t.w
+	s.board.lastTx = txID
 	if record && s.UndoDepth > 0 {
 		s.undo = append(s.undo, Record{Label: t.label, Muts: muts})
 		if over := len(s.undo) - s.UndoDepth; over > 0 {
@@ -161,33 +261,54 @@ func (s *Service) commit(t *tx, record bool) error {
 	return nil
 }
 
-// Undo reverts the most recent recorded transaction.
+// Undo reverts the most recent recorded transaction, provided every item it
+// touched is still exactly as that transaction left it.
 func (s *Service) Undo() (string, error) {
 	if len(s.undo) == 0 {
 		return "", ErrNothingToUndo
 	}
 	rec := s.undo[len(s.undo)-1]
-	t := s.begin("undo " + rec.Label)
-	for i := len(rec.Muts) - 1; i >= 0; i-- {
-		m := rec.Muts[i]
-		if m.Before == nil {
-			t.del(m.After.ID)
-		} else {
-			t.put(m.Before.Clone())
+	err := s.run("undo "+rec.Label, false, func(t *tx) error {
+		for _, m := range rec.Muts {
+			id := m.Before
+			if id == nil {
+				id = m.After
+			}
+			if s.board.items[id.ID] != m.After {
+				return &UndoConflictError{Label: rec.Label, By: s.board.LastActor(id.ID)}
+			}
 		}
+		for i := len(rec.Muts) - 1; i >= 0; i-- {
+			m := rec.Muts[i]
+			if m.Before == nil {
+				t.del(m.After.ID)
+			} else {
+				t.put(m.Before.Clone())
+			}
+		}
+		return nil
+	})
+	var uc *UndoConflictError
+	if err == nil || errors.As(err, &uc) {
+		s.undo = s.undo[:len(s.undo)-1]
 	}
-	if err := s.commit(t, false); err != nil {
+	if err != nil {
 		return "", err
 	}
-	s.undo = s.undo[:len(s.undo)-1]
 	return rec.Label, nil
 }
 
 // SetLinkTitle caches a fetched link title. It is not undoable.
 func (s *Service) SetLinkTitle(url, title string) error {
-	e := Event{Time: s.Now(), Op: OpLink, URL: url, Title: title}
+	e := Event{Time: s.Now(), Op: OpLink, URL: url, Title: title, By: s.Actor}
 	if s.log != nil {
-		if err := s.log.Append([]Event{e}); err != nil {
+		err := s.log.Update(func(foreign []Event) ([]Event, error) {
+			for _, f := range foreign {
+				s.board.Replay(f)
+			}
+			return []Event{e}, nil
+		})
+		if err != nil {
 			return err
 		}
 	}
@@ -202,25 +323,31 @@ func (s *Service) Add(text string, state State, parent string, childState State)
 	if title == "" {
 		return Result{}, ErrEmpty
 	}
-	t := s.begin("add")
-	it := &Item{
-		ID:      s.NewID(t.now),
-		Title:   title,
-		Body:    body,
-		State:   state,
-		Parent:  parent,
-		Order:   t.nextOrder(),
-		Created: t.now,
-	}
-	if t.w.Get(parent) == nil {
-		it.Parent = ""
-	}
-	t.put(it)
-	sum := t.syncBody(it.ID, childState)
-	if err := s.commit(t, true); err != nil {
+	var id string
+	var sum SyncSummary
+	err := s.run("add", true, func(t *tx) error {
+		it := &Item{
+			ID:        s.NewID(t.now),
+			Title:     title,
+			Body:      body,
+			State:     state,
+			Parent:    parent,
+			Order:     t.nextOrder(),
+			Created:   t.now,
+			CreatedBy: s.Actor,
+		}
+		if t.w.Get(parent) == nil {
+			it.Parent = ""
+		}
+		t.put(it)
+		id = it.ID
+		sum = t.syncBody(it.ID, childState)
+		return nil
+	})
+	if err != nil {
 		return Result{}, err
 	}
-	return Result{Item: s.board.Get(it.ID), Sync: sum}, nil
+	return Result{Item: s.board.Get(id), Sync: sum}, nil
 }
 
 // Edit replaces an item's title and body and syncs its checkbox children.
@@ -229,88 +356,117 @@ func (s *Service) Edit(id, text string, childState State) (Result, error) {
 	if title == "" {
 		return Result{}, ErrEmpty
 	}
-	t := s.begin("edit")
-	it := t.get(id)
-	if it == nil {
-		return Result{}, ErrNotFound
-	}
-	titleChanged, bodyChanged := it.Title != title, it.Body != body
-	it.Title, it.Body = title, body
-	t.put(it)
-	if titleChanged && it.Source != "" {
-		t.updateSourceLine(it)
-	}
 	var sum SyncSummary
-	if bodyChanged {
-		sum = t.syncBody(id, childState)
-	}
-	if err := s.commit(t, true); err != nil {
+	err := s.run("edit", true, func(t *tx) error {
+		it := t.get(id)
+		if it == nil {
+			return ErrNotFound
+		}
+		titleChanged, bodyChanged := it.Title != title, it.Body != body
+		it.Title, it.Body = title, body
+		t.put(it)
+		if titleChanged && it.Source != "" {
+			t.updateSourceLine(it)
+		}
+		sum = SyncSummary{}
+		if bodyChanged {
+			sum = t.syncBody(id, childState)
+		}
+		return nil
+	})
+	if err != nil {
 		return Result{}, err
 	}
 	return Result{Item: s.board.Get(id), Sync: sum}, nil
 }
 
 // Move changes an item's state. Moving between Now, Next and Later brings
-// open children in the same state along; demoting to Journal does not, and
-// clears the completed date. Moving a done item to an active state reopens it.
+// open children in the same state along; demoting to Journal does not,
+// clears the completed date and ends any claim. Moving a done item to an
+// active state reopens it.
 func (s *Service) Move(id string, target State) (Result, error) {
-	t := s.begin("move to " + target.Label())
-	it := t.get(id)
-	if it == nil {
-		return Result{}, ErrNotFound
-	}
 	res := Result{}
-	if target == Journal {
-		if it.State == Journal {
-			return res, nil
-		}
-		it.State = Journal
-		t.setDone(it, false)
-	} else {
-		wasOpen, old := it.Open(), it.State
-		if wasOpen && old == target {
-			return res, nil
-		}
-		it.State = target
-		it.Order = t.nextOrder()
-		t.setDone(it, false)
-		if wasOpen {
-			var follow func(pid string)
-			follow = func(pid string) {
-				for _, c := range t.w.Children(pid) {
-					if c.State == old && !c.Done() {
-						cc := c.Clone()
-						cc.State = target
-						t.put(cc)
-						res.Followers++
-						follow(c.ID)
-					}
-				}
-			}
-			follow(id)
-		}
-	}
-	if err := s.commit(t, true); err != nil {
+	changed := false
+	err := s.run("move to "+target.Label(), true, func(t *tx) error {
+		var err error
+		res.Followers, changed, err = t.move(id, target)
+		return err
+	})
+	if err != nil || !changed {
 		return Result{}, err
 	}
 	res.Item = s.board.Get(id)
 	return res, nil
 }
 
+// move stages a state change and returns how many children followed and
+// whether anything changed.
+func (t *tx) move(id string, target State) (int, bool, error) {
+	it := t.get(id)
+	if it == nil {
+		return 0, false, ErrNotFound
+	}
+	if target == Journal {
+		if it.State == Journal {
+			return 0, false, nil
+		}
+		it.State = Journal
+		it.endClaim(EndDemoted, t.now, "")
+		t.setDone(it, false)
+		return 0, true, nil
+	}
+	wasOpen, old := it.Open(), it.State
+	if wasOpen && old == target {
+		return 0, false, nil
+	}
+	it.State = target
+	it.Order = t.nextOrder()
+	t.setDone(it, false)
+	followers := 0
+	if wasOpen {
+		var follow func(pid string)
+		follow = func(pid string) {
+			for _, c := range t.w.Children(pid) {
+				if c.State == old && !c.Done() {
+					cc := c.Clone()
+					cc.State = target
+					t.put(cc)
+					followers++
+					follow(c.ID)
+				}
+			}
+		}
+		follow(id)
+	}
+	return followers, true, nil
+}
+
 // Complete marks an item done. If it has open descendants and force is
 // false, a *NeedsConfirmError is returned and nothing changes; with force
 // they are completed too.
 func (s *Service) Complete(id string, force bool) (Result, error) {
-	t := s.begin("complete")
+	var n int
+	err := s.run("complete", true, func(t *tx) error {
+		var err error
+		n, err = t.complete(id, force)
+		return err
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	return Result{Item: s.board.Get(id), Followers: n}, nil
+}
+
+func (t *tx) complete(id string, force bool) (int, error) {
 	it := t.get(id)
 	if it == nil {
-		return Result{}, ErrNotFound
+		return 0, ErrNotFound
 	}
 	if it.State == Journal {
-		return Result{}, ErrJournalDone
+		return 0, ErrJournalDone
 	}
 	if it.Done() {
-		return Result{Item: it}, nil
+		return 0, nil
 	}
 	var open []*Item
 	for _, d := range t.w.Descendants(id) {
@@ -319,27 +475,26 @@ func (s *Service) Complete(id string, force bool) (Result, error) {
 		}
 	}
 	if len(open) > 0 && !force {
-		return Result{}, &NeedsConfirmError{Open: len(open)}
+		return 0, &NeedsConfirmError{Open: len(open), Children: open}
 	}
 	t.setDone(it, true)
 	for _, d := range open {
 		t.setDone(t.get(d.ID), true)
 	}
-	if err := s.commit(t, true); err != nil {
-		return Result{}, err
-	}
-	return Result{Item: s.board.Get(id), Followers: len(open)}, nil
+	return len(open), nil
 }
 
 // Reopen clears an item's completed date.
 func (s *Service) Reopen(id string) (Result, error) {
-	t := s.begin("reopen")
-	it := t.get(id)
-	if it == nil {
-		return Result{}, ErrNotFound
-	}
-	t.setDone(it, false)
-	if err := s.commit(t, true); err != nil {
+	err := s.run("reopen", true, func(t *tx) error {
+		it := t.get(id)
+		if it == nil {
+			return ErrNotFound
+		}
+		t.setDone(it, false)
+		return nil
+	})
+	if err != nil {
 		return Result{}, err
 	}
 	return Result{Item: s.board.Get(id)}, nil
@@ -347,28 +502,27 @@ func (s *Service) Reopen(id string) (Result, error) {
 
 // Delete removes an item. Its children move up to its parent.
 func (s *Service) Delete(id string) error {
-	t := s.begin("delete")
-	it := t.get(id)
-	if it == nil {
-		return ErrNotFound
-	}
-	for _, c := range t.w.Children(id) {
-		cc := c.Clone()
-		cc.Parent = it.Parent
-		t.put(cc)
-	}
-	for _, x := range t.w.items {
-		if x.Source == id {
+	return s.run("delete", true, func(t *tx) error {
+		it := t.get(id)
+		if it == nil {
+			return ErrNotFound
+		}
+		for _, c := range t.w.Children(id) {
+			cc := c.Clone()
+			cc.Parent = it.Parent
+			t.put(cc)
+		}
+		for _, x := range t.w.sourceKids(id) {
 			xc := x.Clone()
 			xc.Source, xc.Line = "", 0
 			t.put(xc)
 		}
-	}
-	if it.Source != "" {
-		t.removeSourceLine(it)
-	}
-	t.del(id)
-	return s.commit(t, true)
+		if it.Source != "" {
+			t.removeSourceLine(it)
+		}
+		t.del(id)
+		return nil
+	})
 }
 
 // Direction for Reorder.
@@ -383,81 +537,84 @@ const (
 
 // Reorder moves an open item among its siblings in its view.
 func (s *Service) Reorder(id string, dir Direction) error {
-	t := s.begin("reorder")
-	it := t.get(id)
-	if it == nil {
-		return ErrNotFound
-	}
-	if !it.Open() {
-		return ErrNotInView
-	}
-	sibs := t.w.viewSiblings(it)
-	i := slices.IndexFunc(sibs, func(x *Item) bool { return x.ID == id })
-	switch {
-	case dir == Up && i > 0:
-		o := sibs[i-1].Clone()
-		it.Order, o.Order = o.Order, it.Order
-		t.put(o)
-	case dir == Down && i < len(sibs)-1:
-		o := sibs[i+1].Clone()
-		it.Order, o.Order = o.Order, it.Order
-		t.put(o)
-	case dir == Top && i > 0:
-		it.Order = sibs[0].Order - 1
-	case dir == Bottom && i < len(sibs)-1:
-		it.Order = sibs[len(sibs)-1].Order + 1
-	default:
+	return s.run("reorder", true, func(t *tx) error {
+		it := t.get(id)
+		if it == nil {
+			return ErrNotFound
+		}
+		if !it.Open() {
+			return ErrNotInView
+		}
+		sibs := t.w.viewSiblings(it)
+		i := slices.IndexFunc(sibs, func(x *Item) bool { return x.ID == id })
+		switch {
+		case dir == Up && i > 0:
+			o := sibs[i-1].Clone()
+			it.Order, o.Order = o.Order, it.Order
+			t.put(o)
+		case dir == Down && i < len(sibs)-1:
+			o := sibs[i+1].Clone()
+			it.Order, o.Order = o.Order, it.Order
+			t.put(o)
+		case dir == Top && i > 0:
+			it.Order = sibs[0].Order - 1
+		case dir == Bottom && i < len(sibs)-1:
+			it.Order = sibs[len(sibs)-1].Order + 1
+		default:
+			return nil
+		}
+		t.put(it)
 		return nil
-	}
-	t.put(it)
-	return s.commit(t, true)
+	})
 }
 
 // Indent makes an open item the last child of the sibling above it.
 func (s *Service) Indent(id string) error {
-	t := s.begin("indent")
-	it := t.get(id)
-	if it == nil {
-		return ErrNotFound
-	}
-	if !it.Open() {
-		return ErrNotInView
-	}
-	sibs := t.w.viewSiblings(it)
-	i := slices.IndexFunc(sibs, func(x *Item) bool { return x.ID == id })
-	if i <= 0 {
-		return ErrCannotIndent
-	}
-	it.Parent = sibs[i-1].ID
-	it.Order = t.nextOrder()
-	t.put(it)
-	return s.commit(t, true)
+	return s.run("indent", true, func(t *tx) error {
+		it := t.get(id)
+		if it == nil {
+			return ErrNotFound
+		}
+		if !it.Open() {
+			return ErrNotInView
+		}
+		sibs := t.w.viewSiblings(it)
+		i := slices.IndexFunc(sibs, func(x *Item) bool { return x.ID == id })
+		if i <= 0 {
+			return ErrCannotIndent
+		}
+		it.Parent = sibs[i-1].ID
+		it.Order = t.nextOrder()
+		t.put(it)
+		return nil
+	})
 }
 
 // Outdent moves an item up one level, placing it just after its old parent.
 func (s *Service) Outdent(id string) error {
-	t := s.begin("outdent")
-	it := t.get(id)
-	if it == nil {
-		return ErrNotFound
-	}
-	if it.Parent == "" {
-		return ErrCannotOutdent
-	}
-	p := t.w.Get(it.Parent)
-	if p == nil {
-		it.Parent = ""
+	return s.run("outdent", true, func(t *tx) error {
+		it := t.get(id)
+		if it == nil {
+			return ErrNotFound
+		}
+		if it.Parent == "" {
+			return ErrCannotOutdent
+		}
+		p := t.w.Get(it.Parent)
+		if p == nil {
+			it.Parent = ""
+			t.put(it)
+			return nil
+		}
+		it.Parent = p.Parent
+		it.Order = p.Order + 1
+		sibs := t.w.Children(p.Parent)
+		if i := slices.IndexFunc(sibs, func(x *Item) bool { return x.ID == p.ID }); i >= 0 && i+1 < len(sibs) {
+			it.Order = (p.Order + sibs[i+1].Order) / 2
+		}
 		t.put(it)
-		return s.commit(t, true)
-	}
-	it.Parent = p.Parent
-	it.Order = p.Order + 1
-	sibs := t.w.Children(p.Parent)
-	if i := slices.IndexFunc(sibs, func(x *Item) bool { return x.ID == p.ID }); i >= 0 && i+1 < len(sibs) {
-		it.Order = (p.Order + sibs[i+1].Order) / 2
-	}
-	t.put(it)
-	return s.commit(t, true)
+		return nil
+	})
 }
 
 // viewSiblings returns the items displayed at the same level as it in its
@@ -492,8 +649,10 @@ func (t *tx) setDone(it *Item, done bool) {
 	case done && !it.Done():
 		now := t.now
 		it.Completed = &now
+		it.CompletedBy = t.s.Actor
+		it.endClaim(EndDone, t.now, "")
 	case !done:
-		it.Completed = nil
+		it.Completed, it.CompletedBy = nil, ""
 	}
 	t.put(it)
 	if it.Source != "" {
@@ -597,10 +756,11 @@ func (t *tx) syncBody(id string, childState State) SyncSummary {
 			if l.Checked != c.Done() && c.State.Active() {
 				if l.Checked {
 					now := t.now
-					c.Completed = &now
+					c.Completed, c.CompletedBy = &now, t.s.Actor
+					c.endClaim(EndDone, t.now, "")
 					sum.Completed++
 				} else {
-					c.Completed = nil
+					c.Completed, c.CompletedBy = nil, ""
 					sum.Reopened++
 				}
 			}
@@ -608,18 +768,19 @@ func (t *tx) syncBody(id string, childState State) SyncSummary {
 			continue
 		}
 		c := &Item{
-			ID:      t.s.NewID(t.now),
-			Title:   l.Text,
-			State:   childState,
-			Parent:  id,
-			Source:  id,
-			Line:    l.Ordinal,
-			Created: t.now,
-			Order:   t.orderBetween(orderOf, has, i),
+			ID:        t.s.NewID(t.now),
+			Title:     l.Text,
+			State:     childState,
+			Parent:    id,
+			Source:    id,
+			Line:      l.Ordinal,
+			Created:   t.now,
+			CreatedBy: t.s.Actor,
+			Order:     t.orderBetween(orderOf, has, i),
 		}
 		if l.Checked {
 			now := t.now
-			c.Completed = &now
+			c.Completed, c.CompletedBy = &now, t.s.Actor
 		}
 		orderOf[i], has[i] = c.Order, true
 		t.put(c)

@@ -19,6 +19,12 @@ type editorState struct {
 	state    todo.State // classification of a new entry
 	editID   string     // set when editing an existing item
 	parentID string     // set when adding a child
+	// base is the item as it was when editing started. If an agent (or
+	// another window) changes its text meanwhile, the first save warns and
+	// a second save overwrites.
+	base      *todo.Item
+	conflict  string
+	overwrite bool
 }
 
 func (m *Model) newTextarea() textarea.Model {
@@ -89,7 +95,7 @@ func (m *Model) openEdit(id string) tea.Cmd {
 	if it == nil {
 		return nil
 	}
-	m.editor = &editorState{ta: m.newTextarea(), state: it.State, editID: id}
+	m.editor = &editorState{ta: m.newTextarea(), state: it.State, editID: id, base: it}
 	m.layoutEditor()
 	m.editor.ta.SetValue(it.Text())
 	m.editor.ta.MoveToBegin()
@@ -151,6 +157,9 @@ func (m *Model) submitEditor() tea.Cmd {
 		err error
 	)
 	if e.editID != "" {
+		if blocked := m.editConflict(); blocked {
+			return nil
+		}
 		res, err = m.Service.Edit(e.editID, text, m.childState())
 	} else {
 		res, err = m.Service.Add(text, e.state, e.parentID, m.childState())
@@ -181,6 +190,32 @@ func (m *Model) submitEditor() tea.Cmd {
 		return m.warn(text + m.undoHint())
 	}
 	return m.info(text)
+}
+
+// editConflict reports whether saving should wait because the item's text
+// changed elsewhere since the dialog opened. The first save shows a warning
+// in the dialog; saving again overwrites.
+func (m *Model) editConflict() bool {
+	e := m.editor
+	if _, err := m.Service.Sync(); err == nil {
+		m.refresh()
+	}
+	cur := m.board().Get(e.editID)
+	if cur == nil {
+		e.conflict = "This item was deleted elsewhere. Copy anything you need, then press esc."
+		return true
+	}
+	if e.overwrite || (cur.Title == e.base.Title && cur.Body == e.base.Body) {
+		return false
+	}
+	who := m.board().LastActor(e.editID)
+	if who == "" {
+		who = "another todotil window"
+	}
+	e.conflict = who + " changed this text since you opened it. Press " +
+		m.Keys.First(config.Submit) + " again to overwrite, or esc to cancel."
+	e.overwrite = true
+	return true
 }
 
 // syncText summarises a checkbox sync for the status bar.
@@ -231,12 +266,15 @@ func (m *Model) editorView() string {
 	}
 	hints = append(hints, keys(config.Cancel)+" cancel")
 	hint := m.st.muted.Background(m.st.dialogBg).Width(inner).Render(strings.Join(hints, " · "))
-	body := lipgloss.JoinVertical(lipgloss.Left,
+	parts := []string{
 		bg.Width(inner).Render(head),
 		bg.Width(inner).Render(""),
 		e.ta.View(),
 		bg.Width(inner).Render(""),
-		hint,
-	)
+	}
+	if e.conflict != "" {
+		parts = append(parts, m.st.warn.Background(m.st.dialogBg).Width(inner).Render(e.conflict))
+	}
+	body := lipgloss.JoinVertical(lipgloss.Left, append(parts, hint)...)
 	return m.st.dialog.Width(w).Render(body)
 }

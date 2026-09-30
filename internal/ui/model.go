@@ -132,7 +132,8 @@ type Model struct {
 	linkFailed   map[string]bool
 	linkSem      chan struct{}
 
-	nextBackup time.Time
+	nextBackup  time.Time
+	lastSyncErr string
 
 	lastClickAt  time.Time
 	lastClickRow int
@@ -162,7 +163,7 @@ func New(d Deps) *Model {
 
 // Init starts background work.
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(m.startupBackupCmd(), m.backupTick(), m.fetchVisibleLinks())
+	return tea.Batch(m.startupBackupCmd(), m.backupTick(), m.syncTick(), m.fetchVisibleLinks())
 }
 
 const maxJumps = 50
@@ -327,10 +328,15 @@ func (m *Model) warn(s string) tea.Cmd { return m.setStatus(statusWarn, s) }
 // journal item) are warnings; anything else, like a failed save, is an error.
 func (m *Model) fail(err error) tea.Cmd {
 	kind := statusError
-	for _, v := range []error{todo.ErrEmpty, todo.ErrNotFound, todo.ErrJournalDone, todo.ErrNotInView, todo.ErrCannotIndent, todo.ErrCannotOutdent} {
+	for _, v := range []error{todo.ErrEmpty, todo.ErrNotFound, todo.ErrJournalDone, todo.ErrNotInView,
+		todo.ErrCannotIndent, todo.ErrCannotOutdent, todo.ErrNotClaimed, todo.ErrConflict} {
 		if errors.Is(err, v) {
 			kind = statusWarn
 		}
+	}
+	var uc *todo.UndoConflictError
+	if errors.As(err, &uc) {
+		kind = statusWarn
 	}
 	return m.setStatus(kind, capitalise(err.Error()))
 }
@@ -370,6 +376,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = m.handleLinkTitle(msg)
 	case backupTickMsg:
 		cmd = m.handleBackupTick(time.Time(msg))
+	case syncTickMsg:
+		cmd = m.handleSyncTick()
 	case backupDoneMsg:
 		if msg.err != nil {
 			cmd = m.fail(msg.err)
@@ -505,6 +513,8 @@ func (m *Model) listKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.askDelete(it)
 	case k(config.Copy):
 		return m.copyItem(it)
+	case k(config.Unassign):
+		return m.unassign(it)
 	case k(config.Move):
 		m.pendingMove = true
 	case k(config.ItemUp):

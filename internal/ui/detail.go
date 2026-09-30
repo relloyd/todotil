@@ -61,11 +61,23 @@ func (m *Model) buildDetail() {
 	default:
 		meta = append(meta, m.st.badge(it.State))
 	}
-	meta = append(meta, m.st.muted.Render("created "+it.Created.Local().Format(dateLayout)))
+	created := "created " + it.Created.Local().Format(dateLayout)
+	if it.CreatedBy != "" {
+		created += " by " + it.CreatedBy
+	}
+	meta = append(meta, m.st.muted.Render(created))
 	if it.Completed != nil {
-		meta = append(meta, m.st.done.Render("completed "+it.Completed.Local().Format(dateLayout)))
+		done := "completed " + it.Completed.Local().Format(dateLayout)
+		if it.CompletedBy != "" {
+			done += " by " + it.CompletedBy
+		}
+		meta = append(meta, m.st.done.Render(done))
 	}
 	add(strings.Join(meta, m.st.subtle.Render(" · ")), "")
+	if c := it.ActiveClaim(); c != nil {
+		add(m.st.agent.Render("● claimed by "+c.Assignee+" · "+age(m.Now().Sub(c.At))+" ago · "+c.ID)+
+			m.st.subtle.Render("  ("+m.Keys.First(config.Unassign)+" to unassign)"), "")
+	}
 	if p := b.Get(it.Parent); p != nil {
 		add(m.st.muted.Render("↑ parent: ")+m.st.accent.Render(clean(p.Title))+m.st.subtle.Render("  ("+m.Keys.First(config.JumpParent)+")"), p.ID)
 	}
@@ -96,7 +108,39 @@ func (m *Model) buildDetail() {
 			line := strings.Repeat("  ", depth[k.ID]) + m.st.done.Render(box) +
 				renderSegs(m.textSegs(k.Title, st), nil) + "  " +
 				lipgloss.NewStyle().Foreground(m.st.stateColor(k.State)).Render(strings.ToLower(where))
+			if c := k.ActiveClaim(); c != nil {
+				line += "  " + m.st.agent.Render("@"+c.Assignee)
+			}
 			add(line, k.ID)
+		}
+	}
+	if len(it.Notes) > 0 {
+		add("", "")
+		add(m.st.dayHeader.Render("Notes")+" "+m.st.rule.Render(strings.Repeat("─", max(0, w-6))), "")
+		for _, n := range it.Notes {
+			who := n.By
+			if who == "" {
+				who = "you"
+			}
+			add(m.st.muted.Render(n.At.Local().Format("2 Jan 15:04")+"  ")+m.st.agent.Render(who)+"  "+
+				renderSegs(m.textSegs(n.Text, m.st.text), nil), "")
+		}
+	}
+	if len(it.Claims) > 0 {
+		add("", "")
+		add(m.st.dayHeader.Render("Claims")+" "+m.st.rule.Render(strings.Repeat("─", max(0, w-7))), "")
+		for _, c := range it.Claims {
+			line := m.st.agent.Render(c.Assignee) + m.st.muted.Render("  "+c.At.Local().Format("2 Jan 15:04"))
+			if c.Ended != nil {
+				end := string(c.End)
+				if c.Reason != "" {
+					end += ": " + c.Reason
+				}
+				line += m.st.muted.Render(" → " + end + " " + c.Ended.Local().Format("2 Jan 15:04"))
+			} else {
+				line += m.st.agent.Render(" → active")
+			}
+			add(line+m.st.subtle.Render("  "+c.ID), "")
 		}
 	}
 	d.offset = min(d.offset, max(0, len(d.lines)-m.contentHeight()))
@@ -174,6 +218,8 @@ func (m *Model) detailKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.askDelete(it)
 	case k(config.Copy):
 		return m.copyItem(it)
+	case k(config.Unassign):
+		return m.unassign(it)
 	case k(config.AddChild):
 		return m.openAdd(it.ID, "")
 	}

@@ -44,8 +44,8 @@ lists. You can take items from it, report progress and mark them done with the
 | 3 | Someone else holds the claim | Pick another item. Pass ` + "`--steal`" + ` only if the user asked you to. |
 | 4 | Not found: item deleted, position past the end, or nothing unclaimed | Re-list and choose again. |
 | 5 | The item still has open children (listed in ` + "`error.details.children`" + `) | Finish or claim the children, or pass ` + "`--cascade`" + ` if they're genuinely done. |
-| 6 | Your claim ended: released, stolen, unassigned by the user, or the item became a journal note | Stop work on it and tell the user. Don't re-claim without checking. |
-| 7 | The item can't be claimed (journal note or already done) | Pick another item. |
+| 6 | Your claim ended: released, rejected, stolen, unassigned by the user, or the item became a journal note | Stop work on it and tell the user. Don't re-claim without checking. |
+| 7 | The item can't be claimed (journal note, already done, or rejected) | Pick another item. |
 | 1 | Unexpected error | Report it. |
 
 With ` + "`--json`" + `, failures also print ` + "`{\"error\": {\"code\", \"exit\", \"message\", \"details\"}}`" + ` to stdout.
@@ -58,8 +58,10 @@ With ` + "`--json`" + `, failures also print ` + "`{\"error\": {\"code\", \"exit
   Never leave a claim dangling: claims don't expire.
 - **When you finish.** If ` + "`done`" + ` returns ` + "`already_done: true`" + `, the user
   completed the item. Treat it as finished.
-- **The user.** The user can move, edit, unassign or complete items at any time.
+- **The user.** The user can move, edit, unassign, complete or reject items at any time.
   Re-read the item with ` + "`show`" + ` before relying on details you fetched earlier.
+- **Rejection.** Rejection is separate from completion. It ends an active claim
+  with exit 6; ` + "`show`" + ` reports ` + "`rejected`" + `, ` + "`rejected_at`" + ` and ` + "`rejected_by`" + `.
 - **IDs.** Item and claim IDs accept any unique prefix of 6+ characters. Positions
   are numbers with fewer than 6 digits.
 `

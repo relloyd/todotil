@@ -162,6 +162,8 @@ func describeState(it *Item) string {
 	switch {
 	case it.Done():
 		return "already done"
+	case it.Rejected():
+		return "already rejected"
 	case it.State == Journal:
 		return "a journal note"
 	}

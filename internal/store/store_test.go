@@ -195,7 +195,7 @@ func TestUpgradeStartsNewFile(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(dir, files[1]))
 	require.NoError(t, err)
 	assert.True(t, strings.HasPrefix(string(b), `{"t":`))
-	assert.Contains(t, string(b), `"v":2`)
+	assert.Contains(t, string(b), `"v":3`)
 }
 
 func TestBackupAndPrune(t *testing.T) {

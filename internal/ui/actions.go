@@ -78,7 +78,7 @@ func plural(n int, one, many string) string {
 }
 
 func (m *Model) toggleDone(it *todo.Item) tea.Cmd {
-	if it.Done() {
+	if it.Done() || it.Rejected() {
 		if _, err := m.Service.Reopen(it.ID); err != nil {
 			return m.fail(err)
 		}
@@ -106,6 +106,35 @@ func (m *Model) toggleDone(it *todo.Item) tea.Cmd {
 	}
 	m.refresh()
 	return m.info("Completed " + quote(it.Title) + m.undoHint())
+}
+
+func (m *Model) reject(it *todo.Item) tea.Cmd {
+	_, err := m.Service.Reject(it.ID, false)
+	var confirm *todo.NeedsConfirmError
+	if errors.As(err, &confirm) {
+		id, title := it.ID, it.Title
+		m.confirm = &confirmState{
+			prompt: fmt.Sprintf("Reject %s and its %d open %s?", quote(title), confirm.Open, plural(confirm.Open, "child", "children")),
+			onYes: func() tea.Cmd {
+				result, err := m.Service.Reject(id, true)
+				if err != nil {
+					return m.fail(err)
+				}
+				m.refresh()
+				message := "Rejected " + quote(title)
+				if result.Followers > 0 {
+					message += " and its children"
+				}
+				return m.info(message + m.undoHint())
+			},
+		}
+		return nil
+	}
+	if err != nil {
+		return m.fail(err)
+	}
+	m.refresh()
+	return m.info("Rejected " + quote(it.Title) + m.undoHint())
 }
 
 func (m *Model) unassign(it *todo.Item) tea.Cmd {
@@ -173,7 +202,20 @@ func (m *Model) toggleSortKey() tea.Cmd {
 	if cmd := m.saveSettings(); cmd != nil {
 		return cmd
 	}
-	return m.info("History sorted by " + m.Settings.History.Sort + " date")
+	sortLabel := "created"
+	if m.Settings.History.Sort == string(todo.SortCompleted) {
+		sortLabel = "completed/rejected"
+	}
+	return m.info("History sorted by " + sortLabel + " date")
+}
+
+func (m *Model) cycleHistoryFilter() tea.Cmd {
+	m.historyFilter++
+	if m.historyFilter > todo.HistoryJournal {
+		m.historyFilter = todo.HistoryAll
+	}
+	m.refresh()
+	return m.info("History filter: " + m.historyFilter.Label())
 }
 
 func (m *Model) toggleSortDir() tea.Cmd {

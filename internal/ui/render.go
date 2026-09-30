@@ -245,6 +245,8 @@ func (m *Model) marker(it *todo.Item, depth int, history bool) seg {
 	switch {
 	case it.Done():
 		return seg{text: "✓ ", st: m.st.done}
+	case it.Rejected():
+		return seg{text: "× ", st: m.st.errorS}
 	case it.State == todo.Journal:
 		return seg{text: "✎ ", st: lipgloss.NewStyle().Foreground(m.st.stateColor(todo.Journal))}
 	case history:
@@ -268,7 +270,7 @@ func (m *Model) itemLine(r todo.Row, selected, history bool) string {
 		left = append(left, seg{text: m.contextText(r.Context) + ctxSep, st: m.st.muted})
 	}
 	titleSt := m.st.text
-	if it.Done() {
+	if it.Done() || it.Rejected() {
 		titleSt = m.st.muted
 	} else if r.Depth == 0 && !history {
 		titleSt = titleSt.Bold(true)
@@ -305,9 +307,9 @@ func (m *Model) historyMeta(it *todo.Item) []seg {
 	if it.Open() {
 		out = append(out, seg{text: strings.ToLower(it.State.Label()) + "  ", st: lipgloss.NewStyle().Foreground(m.st.stateColor(it.State))})
 	}
-	byCompleted := m.Settings.History.Sort == string(todo.SortCompleted)
+	byOutcome := m.Settings.History.Sort == string(todo.SortCompleted)
 	created := "created " + it.Created.Local().Format("15:04")
-	if byCompleted {
+	if byOutcome {
 		created = "created " + it.Created.Local().Format("2 Jan 2006 15:04")
 	}
 	out = append(out, seg{text: created, st: m.st.muted})
@@ -316,12 +318,24 @@ func (m *Model) historyMeta(it *todo.Item) []seg {
 		if it.CompletedBy != "" {
 			done += "by " + it.CompletedBy + " "
 		}
-		if byCompleted {
+		if byOutcome {
 			done += it.Completed.Local().Format("15:04")
 		} else {
 			done += it.Completed.Local().Format("2 Jan 2006 15:04")
 		}
 		out = append(out, seg{text: " · ", st: m.st.subtle}, seg{text: done, st: m.st.done})
+	}
+	if it.RejectedAt != nil {
+		rejected := "rejected "
+		if it.RejectedBy != "" {
+			rejected += "by " + it.RejectedBy + " "
+		}
+		if byOutcome {
+			rejected += it.RejectedAt.Local().Format("15:04")
+		} else {
+			rejected += it.RejectedAt.Local().Format("2 Jan 2006 15:04")
+		}
+		out = append(out, seg{text: " · ", st: m.st.subtle}, seg{text: rejected, st: m.st.errorS})
 	}
 	return append(out, seg{text: " ", st: m.st.muted})
 }
@@ -434,16 +448,20 @@ func (m *Model) hintsView() string {
 	case m.mode == modeHelp:
 		hs = []string{m.st.key.Render("↑↓") + m.st.muted.Render(" scroll"), m.st.key.Render("esc") + m.st.muted.Render(" close")}
 	case m.mode == modeDetail:
-		hs = []string{m.st.key.Render("esc") + m.st.muted.Render(" back"), m.hint(config.Edit, "edit"), m.hint(config.Done, "done"),
-			m.hint(config.Move, "move"), m.hint(config.JumpParent, "parent"), m.hint(config.JumpChild, "child"),
+		hs = []string{m.st.key.Render("esc") + m.st.muted.Render(" back"), m.hint(config.Edit, "edit"), m.hint(config.Done, "done")}
+		if it := m.board().Get(m.detail.id); it != nil && it.Open() {
+			hs = append(hs, m.hint(config.Reject, "reject"))
+		}
+		hs = append(hs, m.hint(config.Move, "move"), m.hint(config.JumpParent, "parent"), m.hint(config.JumpChild, "child"),
 			m.hint(config.JumpBack, "back"), m.hint(config.Copy, "copy"), m.hint(config.CopyID, "copy id"),
-			m.hint(config.SelectMode, "select")}
+			m.hint(config.SelectMode, "select"))
 	default:
 		hs = []string{m.hint(config.Add, "add"), m.hint(config.Edit, "edit"), m.hint(config.Open, "open"),
-			m.hint(config.Done, "done"), m.hint(config.Move, "move"), m.hint(config.Indent, "indent"),
+			m.hint(config.Done, "done"), m.hint(config.Reject, "reject"), m.hint(config.Move, "move"), m.hint(config.Indent, "indent"),
 			m.hint(config.Undo, "undo")}
 		if m.tab == tabHistory {
-			hs = append(hs, m.hint(config.SortKey, "sort"), m.hint(config.SortDir, "reverse"))
+			hs = append(hs, m.hint(config.HistoryFilter, "filter: "+m.historyFilter.Label()),
+				m.hint(config.SortKey, "sort"), m.hint(config.SortDir, "reverse"))
 		} else {
 			hs = append(hs, m.st.key.Render(m.Keys.First(config.ItemUp)+"/"+m.Keys.First(config.ItemDown))+" "+m.st.muted.Render("reorder"))
 		}

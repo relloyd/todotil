@@ -299,8 +299,8 @@ type Row struct {
 	// Context is the parent's title when the item's parent is not shown
 	// directly above it in the same list.
 	Context string
-	// Day is the local calendar day of a RowDay header; zero means "not
-	// completed" when grouping by completed date.
+	// Day is the local calendar day of a RowDay header; zero means there is
+	// no outcome date when grouping by completion or rejection.
 	Day time.Time
 }
 
@@ -308,7 +308,7 @@ type Row struct {
 // tree. Items whose parent is not in the view are shown at the top level
 // with their parent's title as context.
 func (b *Board) ViewRows(s State) []Row {
-	in := func(it *Item) bool { return it.State == s && !it.Done() }
+	in := func(it *Item) bool { return it.State == s && !it.Done() && !it.Rejected() }
 	var tops []*Item
 	for _, it := range b.items {
 		if !in(it) {
@@ -342,117 +342,6 @@ func (b *Board) ViewRows(s State) []Row {
 	}
 	for _, it := range tops {
 		walk(it, 0)
-	}
-	return rows
-}
-
-// SortKey selects the date History groups and orders by.
-type SortKey string
-
-const (
-	SortCreated   SortKey = "created"
-	SortCompleted SortKey = "completed"
-)
-
-// HistoryRows returns every item grouped by local day of the sort key. A child
-// is nested under its parent when both fall in the same day group; otherwise
-// it is shown at the top level of its own group with its parent as context.
-func (b *Board) HistoryRows(key SortKey, desc bool) []Row {
-	keyOf := func(it *Item) (time.Time, bool) {
-		if key == SortCompleted {
-			if it.Completed == nil {
-				return time.Time{}, false
-			}
-			return *it.Completed, true
-		}
-		return it.Created, true
-	}
-	type group struct {
-		day   time.Time
-		items []*Item
-		set   map[string]bool
-	}
-	groups := map[time.Time]*group{}
-	for _, it := range b.items {
-		t, ok := keyOf(it)
-		var day time.Time
-		if ok {
-			lt := t.Local()
-			day = time.Date(lt.Year(), lt.Month(), lt.Day(), 0, 0, 0, 0, time.Local)
-		}
-		g := groups[day]
-		if g == nil {
-			g = &group{day: day, set: map[string]bool{}}
-			groups[day] = g
-		}
-		g.items = append(g.items, it)
-		g.set[it.ID] = true
-	}
-	ordered := make([]*group, 0, len(groups))
-	for _, g := range groups {
-		ordered = append(ordered, g)
-	}
-	// The "not completed" group (zero day) sorts as the most recent.
-	dayCmp := func(a, c time.Time) int {
-		switch {
-		case a.IsZero() && c.IsZero():
-			return 0
-		case a.IsZero():
-			return 1
-		case c.IsZero():
-			return -1
-		}
-		return a.Compare(c)
-	}
-	itemCmp := func(a, c *Item) int {
-		ta, _ := keyOf(a)
-		tc, _ := keyOf(c)
-		return cmp.Or(ta.Compare(tc), a.Created.Compare(c.Created), cmp.Compare(a.ID, c.ID))
-	}
-	slices.SortFunc(ordered, func(a, c *group) int {
-		if desc {
-			return dayCmp(c.day, a.day)
-		}
-		return dayCmp(a.day, c.day)
-	})
-	var rows []Row
-	seen := map[string]bool{}
-	for _, g := range ordered {
-		rows = append(rows, Row{Kind: RowDay, Day: g.day})
-		var tops []*Item
-		for _, it := range g.items {
-			if !g.set[it.Parent] {
-				tops = append(tops, it)
-			}
-		}
-		slices.SortFunc(tops, func(a, c *Item) int {
-			if desc {
-				return itemCmp(c, a)
-			}
-			return itemCmp(a, c)
-		})
-		var walk func(it *Item, depth int)
-		walk = func(it *Item, depth int) {
-			if seen[it.ID] {
-				return
-			}
-			seen[it.ID] = true
-			r := Row{Kind: RowItem, Item: it, Depth: depth}
-			if depth == 0 {
-				if p := b.items[it.Parent]; p != nil {
-					r.Context = p.Title
-				}
-			}
-			rows = append(rows, r)
-			for _, c := range b.Children(it.ID) {
-				if g.set[c.ID] {
-					walk(c, depth+1)
-				}
-			}
-		}
-		for _, it := range tops {
-			walk(it, 0)
-		}
 	}
 	return rows
 }

@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// State classifies an item. Completion is tracked separately via
-// Item.Completed, so a done item keeps the state it was completed in.
+// State classifies an item. Completion and rejection are tracked separately,
+// so an item keeps the state it had when its outcome was recorded.
 type State string
 
 const (
@@ -54,14 +54,15 @@ func ParseState(s string) (State, error) {
 
 // Item is the single record kept for every todo and journal entry.
 type Item struct {
-	ID        string     `json:"id"`
-	Title     string     `json:"title"`
-	Body      string     `json:"body,omitempty"`
-	State     State      `json:"state"`
-	Parent    string     `json:"parent,omitempty"`
-	Order     float64    `json:"order"`
-	Created   time.Time  `json:"created"`
-	Completed *time.Time `json:"completed,omitempty"`
+	ID         string     `json:"id"`
+	Title      string     `json:"title"`
+	Body       string     `json:"body,omitempty"`
+	State      State      `json:"state"`
+	Parent     string     `json:"parent,omitempty"`
+	Order      float64    `json:"order"`
+	Created    time.Time  `json:"created"`
+	Completed  *time.Time `json:"completed,omitempty"`
+	RejectedAt *time.Time `json:"rejected_at,omitempty"`
 	// Source is the ID of the item whose body holds this item's checkbox
 	// line. Empty when the item did not come from (or was detached from) a
 	// checkbox line.
@@ -69,10 +70,11 @@ type Item struct {
 	// Line is the checkbox ordinal within the source body at the last sync.
 	// It is the lowest-confidence signal used when matching lines to items.
 	Line int `json:"line,omitempty"`
-	// CreatedBy and CompletedBy name the agent responsible; empty means the
-	// user in the TUI.
+	// CreatedBy, CompletedBy and RejectedBy name the agent responsible; empty
+	// means the user in the TUI.
 	CreatedBy   string `json:"created_by,omitempty"`
 	CompletedBy string `json:"completed_by,omitempty"`
+	RejectedBy  string `json:"rejected_by,omitempty"`
 	// Claims is every claim ever made on the item, oldest first. At most
 	// the last one is active.
 	Claims []Claim `json:"claims,omitempty"`
@@ -99,6 +101,7 @@ const (
 	EndStolen     ClaimEnd = "stolen"
 	EndUnassigned ClaimEnd = "unassigned"
 	EndDemoted    ClaimEnd = "demoted"
+	EndRejected   ClaimEnd = "rejected"
 )
 
 // Active reports whether the claim is still held.
@@ -129,8 +132,11 @@ func (it *Item) endClaim(end ClaimEnd, at time.Time, reason string) {
 // Done reports whether the item has been completed.
 func (it *Item) Done() bool { return it.Completed != nil }
 
+// Rejected reports whether the item has been rejected.
+func (it *Item) Rejected() bool { return it.RejectedAt != nil }
+
 // Open reports whether the item is shown in one of the active views.
-func (it *Item) Open() bool { return it.State.Active() && !it.Done() }
+func (it *Item) Open() bool { return it.State.Active() && !it.Done() && !it.Rejected() }
 
 // Text joins title and body using the Git commit message convention.
 func (it *Item) Text() string {
@@ -147,6 +153,7 @@ func (it *Item) Clone() *Item {
 	}
 	c := *it
 	c.Completed = cloneTime(it.Completed)
+	c.RejectedAt = cloneTime(it.RejectedAt)
 	if it.Claims != nil {
 		c.Claims = make([]Claim, len(it.Claims))
 		for i, cl := range it.Claims {
@@ -180,7 +187,7 @@ func (it *Item) Equal(o *Item) bool {
 	if it == nil || o == nil {
 		return it == o
 	}
-	if !timePtrEqual(it.Completed, o.Completed) {
+	if !timePtrEqual(it.Completed, o.Completed) || !timePtrEqual(it.RejectedAt, o.RejectedAt) {
 		return false
 	}
 	claimEq := func(a, b Claim) bool {
@@ -192,6 +199,7 @@ func (it *Item) Equal(o *Item) bool {
 		it.State == o.State && it.Parent == o.Parent && it.Order == o.Order &&
 		it.Created.Equal(o.Created) && it.Source == o.Source && it.Line == o.Line &&
 		it.CreatedBy == o.CreatedBy && it.CompletedBy == o.CompletedBy &&
+		it.RejectedBy == o.RejectedBy &&
 		slices.EqualFunc(it.Claims, o.Claims, claimEq) && slices.EqualFunc(it.Notes, o.Notes, noteEq)
 }
 

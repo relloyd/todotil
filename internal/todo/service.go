@@ -18,13 +18,16 @@ type Log interface {
 
 // Errors returned by Service operations.
 var (
-	ErrEmpty         = errors.New("entry is empty")
-	ErrNotFound      = errors.New("item not found")
-	ErrNothingToUndo = errors.New("nothing to undo")
-	ErrJournalDone   = errors.New("journal items can't be completed; promote it first")
-	ErrNotInView     = errors.New("item is not in an active view")
-	ErrCannotIndent  = errors.New("nothing above to indent under")
-	ErrCannotOutdent = errors.New("already at the top level")
+	ErrEmpty            = errors.New("entry is empty")
+	ErrNotFound         = errors.New("item not found")
+	ErrNothingToUndo    = errors.New("nothing to undo")
+	ErrJournalDone      = errors.New("journal items can't be completed; promote it first")
+	ErrJournalReject    = errors.New("journal items can't be rejected; promote it first")
+	ErrCannotRejectDone = errors.New("a completed item can't be rejected; reopen it first")
+	ErrRejected         = errors.New("item has been rejected")
+	ErrNotInView        = errors.New("item is not in an active view")
+	ErrCannotIndent     = errors.New("nothing above to indent under")
+	ErrCannotOutdent    = errors.New("already at the top level")
 	// ErrConflict means other processes kept changing the same items and
 	// the operation gave up retrying.
 	ErrConflict = errors.New("the items changed in another process at the same time; try again")
@@ -382,8 +385,8 @@ func (s *Service) Edit(id, text string, childState State) (Result, error) {
 
 // Move changes an item's state. Moving between Now, Next and Later brings
 // open children in the same state along; demoting to Journal does not,
-// clears the completed date and ends any claim. Moving a done item to an
-// active state reopens it.
+// clears terminal outcomes and ends any active claim. Moving a done or
+// rejected item to an active state reopens it.
 func (s *Service) Move(id string, target State) (Result, error) {
 	res := Result{}
 	changed := false
@@ -427,7 +430,7 @@ func (t *tx) move(id string, target State) (int, bool, error) {
 		var follow func(pid string)
 		follow = func(pid string) {
 			for _, c := range t.w.Children(pid) {
-				if c.State == old && !c.Done() {
+				if c.State == old && c.Open() {
 					cc := c.Clone()
 					cc.State = target
 					t.put(cc)
@@ -439,65 +442,6 @@ func (t *tx) move(id string, target State) (int, bool, error) {
 		follow(id)
 	}
 	return followers, true, nil
-}
-
-// Complete marks an item done. If it has open descendants and force is
-// false, a *NeedsConfirmError is returned and nothing changes; with force
-// they are completed too.
-func (s *Service) Complete(id string, force bool) (Result, error) {
-	var n int
-	err := s.run("complete", true, func(t *tx) error {
-		var err error
-		n, err = t.complete(id, force)
-		return err
-	})
-	if err != nil {
-		return Result{}, err
-	}
-	return Result{Item: s.board.Get(id), Followers: n}, nil
-}
-
-func (t *tx) complete(id string, force bool) (int, error) {
-	it := t.get(id)
-	if it == nil {
-		return 0, ErrNotFound
-	}
-	if it.State == Journal {
-		return 0, ErrJournalDone
-	}
-	if it.Done() {
-		return 0, nil
-	}
-	var open []*Item
-	for _, d := range t.w.Descendants(id) {
-		if d.Open() {
-			open = append(open, d)
-		}
-	}
-	if len(open) > 0 && !force {
-		return 0, &NeedsConfirmError{Open: len(open), Children: open}
-	}
-	t.setDone(it, true)
-	for _, d := range open {
-		t.setDone(t.get(d.ID), true)
-	}
-	return len(open), nil
-}
-
-// Reopen clears an item's completed date.
-func (s *Service) Reopen(id string) (Result, error) {
-	err := s.run("reopen", true, func(t *tx) error {
-		it := t.get(id)
-		if it == nil {
-			return ErrNotFound
-		}
-		t.setDone(it, false)
-		return nil
-	})
-	if err != nil {
-		return Result{}, err
-	}
-	return Result{Item: s.board.Get(id)}, nil
 }
 
 // Delete removes an item. Its children move up to its parent.
@@ -620,7 +564,7 @@ func (s *Service) Outdent(id string) error {
 // viewSiblings returns the items displayed at the same level as it in its
 // active view, in order.
 func (b *Board) viewSiblings(it *Item) []*Item {
-	in := func(x *Item) bool { return x.State == it.State && !x.Done() }
+	in := func(x *Item) bool { return x.State == it.State && !x.Done() && !x.Rejected() }
 	var sibs []*Item
 	if p := b.Get(it.Parent); p != nil && in(p) {
 		for _, c := range b.Children(p.ID) {
@@ -640,24 +584,6 @@ func (b *Board) viewSiblings(it *Item) []*Item {
 	}
 	sortByOrder(sibs)
 	return sibs
-}
-
-// setDone sets or clears the completed date on it (a mutable copy), stages
-// it and mirrors the change onto its checkbox line.
-func (t *tx) setDone(it *Item, done bool) {
-	switch {
-	case done && !it.Done():
-		now := t.now
-		it.Completed = &now
-		it.CompletedBy = t.s.Actor
-		it.endClaim(EndDone, t.now, "")
-	case !done:
-		it.Completed, it.CompletedBy = nil, ""
-	}
-	t.put(it)
-	if it.Source != "" {
-		t.updateSourceLine(it)
-	}
 }
 
 // sourceKids returns the items whose checkbox lines live in id's body.
@@ -757,6 +683,7 @@ func (t *tx) syncBody(id string, childState State) SyncSummary {
 				if l.Checked {
 					now := t.now
 					c.Completed, c.CompletedBy = &now, t.s.Actor
+					c.RejectedAt, c.RejectedBy = nil, ""
 					c.endClaim(EndDone, t.now, "")
 					sum.Completed++
 				} else {
@@ -794,7 +721,7 @@ func (t *tx) syncBody(id string, childState State) SyncSummary {
 		if used[j] {
 			continue
 		}
-		if k.Done() {
+		if k.Done() || k.Rejected() {
 			kc := k.Clone()
 			kc.Source, kc.Line = "", 0
 			t.put(kc)

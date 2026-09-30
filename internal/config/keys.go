@@ -17,57 +17,59 @@ type Action string
 // Actions. The move and entry groups are read after "m" and inside the add
 // dialog respectively, so their keys may overlap with list keys.
 const (
-	Quit         Action = "quit"
-	NextView     Action = "next_view"
-	PrevView     Action = "prev_view"
-	ViewNow      Action = "view_now"
-	ViewNext     Action = "view_next"
-	ViewLater    Action = "view_later"
-	ViewHistory  Action = "view_history"
-	Down         Action = "down"
-	Up           Action = "up"
-	Top          Action = "top"
-	Bottom       Action = "bottom"
-	HalfDown     Action = "half_page_down"
-	HalfUp       Action = "half_page_up"
-	PageDown     Action = "page_down"
-	PageUp       Action = "page_up"
-	JumpParent   Action = "jump_parent"
-	JumpChild    Action = "jump_child"
-	JumpBack     Action = "jump_back"
-	OpenSettings Action = "settings"
-	Help         Action = "help"
-	Add          Action = "add"
-	AddChild     Action = "add_child"
-	Edit         Action = "edit"
-	Open         Action = "open"
-	Done         Action = "toggle_done"
-	Delete       Action = "delete"
-	Undo         Action = "undo"
-	Copy         Action = "copy"
-	CopyID       Action = "copy_id"
-	Unassign     Action = "unassign"
-	SelectMode   Action = "select_mode"
-	ItemUp       Action = "item_up"
-	ItemDown     Action = "item_down"
-	ItemTop      Action = "item_top"
-	ItemBottom   Action = "item_bottom"
-	Indent       Action = "indent"
-	Outdent      Action = "outdent"
-	SortKey      Action = "history_sort_key"
-	SortDir      Action = "history_sort_direction"
-	Move         Action = "move"
-	MoveNow      Action = "move_now"
-	MoveNext     Action = "move_next"
-	MoveLater    Action = "move_later"
-	MoveJournal  Action = "move_journal"
-	EntryNow     Action = "entry_now"
-	EntryNext    Action = "entry_next"
-	EntryLater   Action = "entry_later"
-	EntryJrnl    Action = "entry_journal"
-	Submit       Action = "submit"
-	Newline      Action = "newline"
-	Cancel       Action = "cancel"
+	Quit          Action = "quit"
+	NextView      Action = "next_view"
+	PrevView      Action = "prev_view"
+	ViewNow       Action = "view_now"
+	ViewNext      Action = "view_next"
+	ViewLater     Action = "view_later"
+	ViewHistory   Action = "view_history"
+	Down          Action = "down"
+	Up            Action = "up"
+	Top           Action = "top"
+	Bottom        Action = "bottom"
+	HalfDown      Action = "half_page_down"
+	HalfUp        Action = "half_page_up"
+	PageDown      Action = "page_down"
+	PageUp        Action = "page_up"
+	JumpParent    Action = "jump_parent"
+	JumpChild     Action = "jump_child"
+	JumpBack      Action = "jump_back"
+	OpenSettings  Action = "settings"
+	Help          Action = "help"
+	Add           Action = "add"
+	AddChild      Action = "add_child"
+	Edit          Action = "edit"
+	Open          Action = "open"
+	Done          Action = "toggle_done"
+	Reject        Action = "reject"
+	Delete        Action = "delete"
+	Undo          Action = "undo"
+	Copy          Action = "copy"
+	CopyID        Action = "copy_id"
+	Unassign      Action = "unassign"
+	SelectMode    Action = "select_mode"
+	ItemUp        Action = "item_up"
+	ItemDown      Action = "item_down"
+	ItemTop       Action = "item_top"
+	ItemBottom    Action = "item_bottom"
+	Indent        Action = "indent"
+	Outdent       Action = "outdent"
+	SortKey       Action = "history_sort_key"
+	SortDir       Action = "history_sort_direction"
+	HistoryFilter Action = "history_filter"
+	Move          Action = "move"
+	MoveNow       Action = "move_now"
+	MoveNext      Action = "move_next"
+	MoveLater     Action = "move_later"
+	MoveJournal   Action = "move_journal"
+	EntryNow      Action = "entry_now"
+	EntryNext     Action = "entry_next"
+	EntryLater    Action = "entry_later"
+	EntryJrnl     Action = "entry_journal"
+	Submit        Action = "submit"
+	Newline       Action = "newline"
+	Cancel        Action = "cancel"
 )
 
 // ActionInfo describes an action for help and the settings pane.
@@ -116,6 +118,7 @@ var Actions = []ActionInfo{
 	{Edit, GroupList, "Edit the selected item", []string{"e"}},
 	{Open, GroupList, "Open the detail view", []string{"enter"}},
 	{Done, GroupList, "Toggle done", []string{"x", "space"}},
+	{Reject, GroupList, "Reject item and open children", []string{"alt+x"}},
 	{Delete, GroupList, "Delete the selected item", []string{"D"}},
 	{Copy, GroupList, "Copy item (and children) to the clipboard", []string{"y"}},
 	{CopyID, GroupList, "Copy the selected item's ID to the clipboard", []string{"ctrl+y"}},
@@ -126,8 +129,9 @@ var Actions = []ActionInfo{
 	{ItemBottom, GroupList, "Send item to bottom", []string{"J"}},
 	{Indent, GroupList, "Indent under the item above", []string{">"}},
 	{Outdent, GroupList, "Outdent one level", []string{"<"}},
-	{SortKey, GroupList, "History: toggle created/completed sort", []string{"s"}},
+	{SortKey, GroupList, "History: toggle created/completed/rejected sort", []string{"s"}},
 	{SortDir, GroupList, "History: reverse sort direction", []string{"r"}},
+	{HistoryFilter, GroupList, "History: cycle outcome filter", []string{"f"}},
 	{Move, GroupList, "Start a move", []string{"m"}},
 
 	{MoveNow, GroupMove, "Move to Now", []string{"n"}},

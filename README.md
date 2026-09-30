@@ -17,11 +17,12 @@ todotil        # data lives in ~/.config/todotil (override with --home or TODOTI
   Lines like `- [ ] call Sam` become child todos. The entry goes to the view you
   are in. Use `alt+n` / `alt+x` / `alt+l` / `alt+j` to send it to Now / Next / Later / Journal
   instead. `enter` saves, `shift+enter` or `ctrl+j` adds a new line.
-- **Work:** `x` done · `m` then `n`/`x`/`l`/`j` to move · `e` edit · `enter` details
+- **Work:** `x` done/reopen · `alt+x` reject · `m` then `n`/`x`/`l`/`j` to move · `e` edit · `enter` details
   · `>`/`<` indent/outdent · `shift+↑/↓` or `alt+k/j` reorder · `K`/`J` top/bottom
   · `u` undo · `U` unassign an agent.
 - **Navigate:** `j`/`k`, `g`/`G`, `p` parent, `c` first child, `ctrl+o` back.
-- **History:** `s` switches between created and completed date, `r` reverses the order.
+- **History:** `f` cycles All / Completed / Rejected / Journal; `s` switches between
+  created and completed/rejected date, `r` reverses the order.
 - **Copy:** `y` copies the item as Markdown. `v` releases the mouse so you can
   select text.
 

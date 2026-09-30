@@ -118,11 +118,11 @@ write wins. Rules:
   `UndoConflictError` and the entry is dropped. Agent operations are never
   recorded (`record=false`). Navigation (jumps) and link titles aren't undoable.
 - Bump `store.FormatVersion` whenever items gain fields an older binary would
-  drop when it rewrites a snapshot. It is 2 now: claims, notes and
-  `created_by`/`completed_by` were added.
+  drop when it rewrites a snapshot. It is 3 now: rejection fields were added
+  after v2 added claims, notes and `created_by`/`completed_by`.
   - Older binaries refuse newer files, and that behaviour is deliberate.
   - The first append after an upgrade starts a new file with the new header,
-    because appending v2 events under a v1 header would let old binaries
+    because appending newer events under an older header would let old binaries
     misread them.
 - **Many processes share the log.** There is no session lock.
   - `Log.Update` and `Log.Poll` hold `data/.lock` only while reading new bytes and
@@ -159,32 +159,43 @@ write wins. Rules:
   - demotion to journal: `demoted`
   - `--steal`: `stolen`
   - `Release`: `released`
+  - rejection: `rejected`
 - `Finish` treats a claim that ended as `done` as success (`AlreadyDone`).
-  Any other ending is `ClaimEndedError`.
+  Any other ending, including rejection, is `ClaimEndedError`.
 - Notes are records on the item, never in the body. The body drives checkbox sync.
 
-**States.** `State` is `now | next | later | journal`. Completion is separate
-(`Completed *time.Time`), so a done item keeps its state. `Item.Open()` means
-"in an active view" (active state and not done). Journal items can't be
-completed. Demoting to journal clears `Completed`. Moving a done item to an
-active state reopens it.
+**States.** `State` is `now | next | later | journal`. Completion and rejection
+are separate outcomes, so an item keeps its state. `Item.Open()` means "in an
+active view" (active state and neither done nor rejected). Journal items can't
+be completed or rejected. Demoting to journal clears terminal outcomes. Moving
+a done or rejected item to an active state reopens it.
 
 **Hierarchy.** `Parent` is the tree. `Order` (float64) orders siblings: new
 items get `MaxOrder()+1`, outdent uses a midpoint, and reorder swaps orders
 among *view* siblings (`Board.viewSiblings`). A child whose parent isn't in
 the same view shows at the top level with `Row.Context` (the parent title).
-History applies the same rule per day group.
+History applies the same rule per day group. Its transient filter cycles
+All, Completed, Rejected and Journal; outcome sorting uses the completion or
+rejection timestamp.
 
 **Checkbox sync.** `Source` (the note whose body holds the line) is kept
 separate from `Parent`, so re-parenting doesn't break the link. `Line` is
 the checkbox ordinal at the last sync. Matching order: exact text, then near
 match (normalised text or Levenshtein ≤ max(2, 20%)), then position. The body
-owns the wording. The child owns done-ness, but a body edit that ticks or
-unticks a line wins because it is the newest action. Every path that changes
-a sourced child's title or done state must call `updateSourceLine`. Deleting
-one calls `removeSourceLine`, which also shifts later ordinals. If a sync
-removes or rewrites ≥ `BulkThreshold` children, the UI shows a warning with an
-undo hint.
+owns the wording. The child owns its outcome, which the line mirrors as
+`[ ]` open, `[x]` done or `[-]` rejected. A body edit that changes a line's
+mark wins because it is the newest action, so ticking a rejected child's line
+completes it. Removing a completed or rejected checkbox child detaches it so
+its history survives. Every path that changes a sourced child's title or
+outcome must call `updateSourceLine`. Deleting one calls `removeSourceLine`,
+which also shifts later ordinals. If a sync removes or rewrites ≥
+`BulkThreshold` children, the UI shows a warning with an undo hint.
+
+**Outcomes.** Completion and rejection are separate fields that must never
+both be set. Write them only through `Item.markDone`, `markRejected` and
+`clearOutcome`, and read them through `Done()`, `Rejected()` or `Outcome()`.
+[docs/design/item-outcome.md](docs/design/item-outcome.md) describes the
+planned single-field model.
 
 **Config files** are TOML, written atomically (temp file, fsync, rename).
 Missing keys fall back to defaults and are normalised. If a file fails to parse,
@@ -235,7 +246,7 @@ Anything older than `backup_keep_days` (10) is pruned.
   (`newTestService`). `TestReplayMatchesLiveState` checks that the log replays to
   exactly the live board, so keep it passing whenever you add an operation.
 - UI: `internal/ui/ui_test.go` has a `harness` that sends real
-  `tea.KeyPressMsg` / mouse / paste messages (`keyMsg("alt+x")`,
+  `tea.KeyPressMsg` / mouse / paste messages (`keyMsg("ctrl+x")`,
   `h.typeText`, `h.add`) and asserts on `ansi.Strip(View().Content)` and
   model state. Prefer driving behaviour through keys over calling methods
   directly.
@@ -282,4 +293,4 @@ Anything older than `backup_keep_days` (10) is pruned.
   hangs directly off its note.
 - Optional hidden anchors in note bodies (`<!-- id -->`), if position and
   fuzzy matching turn out to be too weak in practice.
-- A search or filter over History.
+- A search over History.

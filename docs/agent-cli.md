@@ -43,8 +43,8 @@ todotil help agents          # instructions to paste into other repos' AGENTS.md
 | 3 | Already claimed by someone else. The holder and claim time are in the error details. Use `--steal` to take it over. |
 | 4 | Not found: no such item or claim, the item was deleted, the position is past the end, or `claim next` found nothing unclaimed |
 | 5 | The parent still has open children. They're listed in the error details. Use `--cascade` to complete them too. |
-| 6 | The claim is no longer valid (released, stolen, unassigned by the user, or the item was demoted to a journal note) |
-| 7 | The item can't be claimed because it's a journal note or already done |
+| 6 | The claim is no longer valid (released, rejected, stolen, unassigned by the user, or the item was demoted to a journal note) |
+| 7 | The item can't be claimed because it's a journal note, already done, or rejected |
 
 ## Rules
 
@@ -60,10 +60,14 @@ todotil help agents          # instructions to paste into other repos' AGENTS.md
 **Done**
 - `done` works wherever the item has been moved since it was claimed.
 - It completes the item and records `completed_by`.
-- If the item is a checkbox child, its line in the parent note is ticked.
+- If the item is a checkbox child, its line in the parent note is ticked
+  (`[x]`). A rejected checkbox child's line is marked `[-]`.
 - If the user already completed the item, `done` succeeds with
-  `already_done: true` and reports who completed it.
+  `already_done: true` and reports who completed it. If they have since
+  reopened or rejected it, `done` fails with exit 6 instead.
 - If the item has open children, `done` fails with exit 5 unless you pass `--cascade`.
+- Rejection is a separate outcome, not completion. It ends an active claim with
+  exit 6; `show` reports `rejected`, `rejected_at` and `rejected_by`.
 
 **Release** gives the item up. It stays where it is and becomes claimable again.
 
@@ -80,8 +84,8 @@ The detail view shows them, and so do `show` and copy.
 - It records `created_by`. Checkbox lines in the text become child todos, as
   they do in the TUI.
 
-**Claims never expire.** They end on done or release, when stolen, when the user
-unassigns them (`U` in the TUI), or when the item is demoted to a journal note.
+**Claims never expire.** They end on done or rejection, on release, when stolen,
+when the user unassigns them (`U` in the TUI), or when the item is demoted to a journal note.
 
 ## Sharing data with the TUI
 
@@ -93,16 +97,16 @@ unassigns them (`U` in the TUI), or when the item is demoted to a journal note.
     made by other processes.
   - If two writers race, the loser retries.
 - **Live reload.** The TUI checks the log every 500ms and reloads when it
-  grows. It shows assignee badges (`@claude-1 2h`), `done by …` in History,
-  and a `✦` marker on items that agents created.
+  grows. It shows assignee badges (`@claude-1 2h`), `done by …` and rejection
+  outcomes in History, and a `✦` marker on items that agents created.
 - **Undo** in the TUI only applies if every item it touches is still exactly
   as your action left it. Otherwise it's refused and dropped. Agent changes
   never go on the TUI's undo stack.
 - **Editing.** If an item's title or body changed while you had its edit dialog
   open, saving asks you to press save again to overwrite.
-- **Format version 2.** The log format is version 2 because items gained fields
-  (`claims`, `notes`, `created_by`, `completed_by`).
-  - An older binary refuses version 2 files rather than silently dropping those fields.
-  - The first write by a new binary starts a fresh file with a version 2 header.
+- **Format version 3.** The log format is version 3 because items gained
+  rejection outcomes (`rejected_at`, `rejected_by`).
+  - An older binary refuses version 3 files rather than silently dropping those fields.
+  - The first write by a new binary starts a fresh file with a version 3 header.
 - **Older binaries.** A new binary refuses to run while an older one holds the old
   session lock.

@@ -245,6 +245,8 @@ func (m *Model) marker(it *todo.Item, depth int, history bool) seg {
 	switch {
 	case it.Done():
 		return seg{text: "✓ ", st: m.st.done}
+	case it.Rejected():
+		return seg{text: "× ", st: m.st.errorS}
 	case it.State == todo.Journal:
 		return seg{text: "✎ ", st: lipgloss.NewStyle().Foreground(m.st.stateColor(todo.Journal))}
 	case history:
@@ -268,7 +270,7 @@ func (m *Model) itemLine(r todo.Row, selected, history bool) string {
 		left = append(left, seg{text: m.contextText(r.Context) + ctxSep, st: m.st.muted})
 	}
 	titleSt := m.st.text
-	if it.Done() {
+	if it.Done() || it.Rejected() {
 		titleSt = m.st.muted
 	} else if r.Depth == 0 && !history {
 		titleSt = titleSt.Bold(true)
@@ -305,23 +307,28 @@ func (m *Model) historyMeta(it *todo.Item) []seg {
 	if it.Open() {
 		out = append(out, seg{text: strings.ToLower(it.State.Label()) + "  ", st: lipgloss.NewStyle().Foreground(m.st.stateColor(it.State))})
 	}
-	byCompleted := m.Settings.History.Sort == string(todo.SortCompleted)
+	byOutcome := m.Settings.History.Sort == string(todo.SortCompleted)
 	created := "created " + it.Created.Local().Format("15:04")
-	if byCompleted {
+	if byOutcome {
 		created = "created " + it.Created.Local().Format("2 Jan 2006 15:04")
 	}
 	out = append(out, seg{text: created, st: m.st.muted})
-	if it.Completed != nil {
-		done := "done "
-		if it.CompletedBy != "" {
-			done += "by " + it.CompletedBy + " "
+	if o, ok := it.Outcome(); ok {
+		text := string(o.Kind) + " "
+		if o.By != "" {
+			text += "by " + o.By + " "
 		}
-		if byCompleted {
-			done += it.Completed.Local().Format("15:04")
+		// Grouped by outcome day, the date is in the header already.
+		if byOutcome {
+			text += o.At.Local().Format("15:04")
 		} else {
-			done += it.Completed.Local().Format("2 Jan 2006 15:04")
+			text += o.At.Local().Format("2 Jan 2006 15:04")
 		}
-		out = append(out, seg{text: " · ", st: m.st.subtle}, seg{text: done, st: m.st.done})
+		st := m.st.done
+		if o.Kind == todo.OutcomeRejected {
+			st = m.st.errorS
+		}
+		out = append(out, seg{text: " · ", st: m.st.subtle}, seg{text: text, st: st})
 	}
 	return append(out, seg{text: " ", st: m.st.muted})
 }
@@ -345,9 +352,15 @@ func age(d time.Duration) string {
 	return fmt.Sprintf("%dy", int(d.Hours()/24/365))
 }
 
-func dayLabel(day, now time.Time) string {
+// dayLabel names a History day group. The zero day holds items with no
+// outcome date: open items and journal notes, or only journal notes when
+// that filter is on.
+func dayLabel(day, now time.Time, filter todo.HistoryFilter) string {
 	if day.IsZero() {
-		return "Not completed"
+		if filter == todo.HistoryJournal {
+			return "Journal notes"
+		}
+		return "Open and journal notes"
 	}
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	switch {
@@ -381,7 +394,7 @@ func (m *Model) listView() string {
 		}
 		r := rows[l.row]
 		if r.Kind == todo.RowDay {
-			label := dayLabel(r.Day, m.Now())
+			label := dayLabel(r.Day, m.Now(), m.historyFilter)
 			rule := strings.Repeat("─", max(0, m.width-ansi.StringWidth(label)-5))
 			out = append(out, " "+m.st.dayHeader.Render(label)+" "+m.st.rule.Render(rule))
 			continue
@@ -434,16 +447,23 @@ func (m *Model) hintsView() string {
 	case m.mode == modeHelp:
 		hs = []string{m.st.key.Render("↑↓") + m.st.muted.Render(" scroll"), m.st.key.Render("esc") + m.st.muted.Render(" close")}
 	case m.mode == modeDetail:
-		hs = []string{m.st.key.Render("esc") + m.st.muted.Render(" back"), m.hint(config.Edit, "edit"), m.hint(config.Done, "done"),
-			m.hint(config.Move, "move"), m.hint(config.JumpParent, "parent"), m.hint(config.JumpChild, "child"),
+		hs = []string{m.st.key.Render("esc") + m.st.muted.Render(" back"), m.hint(config.Edit, "edit"), m.hint(config.Done, "done")}
+		if it := m.board().Get(m.detail.id); it != nil && it.Open() {
+			hs = append(hs, m.hint(config.Reject, "reject"))
+		}
+		hs = append(hs, m.hint(config.Move, "move"), m.hint(config.JumpParent, "parent"), m.hint(config.JumpChild, "child"),
 			m.hint(config.JumpBack, "back"), m.hint(config.Copy, "copy"), m.hint(config.CopyID, "copy id"),
-			m.hint(config.SelectMode, "select")}
+			m.hint(config.SelectMode, "select"))
 	default:
 		hs = []string{m.hint(config.Add, "add"), m.hint(config.Edit, "edit"), m.hint(config.Open, "open"),
-			m.hint(config.Done, "done"), m.hint(config.Move, "move"), m.hint(config.Indent, "indent"),
-			m.hint(config.Undo, "undo")}
+			m.hint(config.Done, "done")}
+		if it := m.selected(); it != nil && it.Open() {
+			hs = append(hs, m.hint(config.Reject, "reject"))
+		}
+		hs = append(hs, m.hint(config.Move, "move"), m.hint(config.Indent, "indent"), m.hint(config.Undo, "undo"))
 		if m.tab == tabHistory {
-			hs = append(hs, m.hint(config.SortKey, "sort"), m.hint(config.SortDir, "reverse"))
+			hs = append(hs, m.hint(config.HistoryFilter, "filter: "+m.historyFilter.Label()),
+				m.hint(config.SortKey, "sort"), m.hint(config.SortDir, "reverse"))
 		} else {
 			hs = append(hs, m.st.key.Render(m.Keys.First(config.ItemUp)+"/"+m.Keys.First(config.ItemDown))+" "+m.st.muted.Render("reorder"))
 		}

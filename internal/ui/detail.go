@@ -29,7 +29,7 @@ func (m *Model) openDetail(id string) {
 }
 
 var (
-	bodyCheckRe  = regexp.MustCompile(`^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$`)
+	bodyCheckRe  = regexp.MustCompile(`^(\s*)[-*+]\s+\[([ xX-])\]\s+(.*)$`)
 	bodyBulletRe = regexp.MustCompile(`^(\s*)[-*+]\s+(.*)$`)
 	bodyHeadRe   = regexp.MustCompile(`^#{1,6}\s+(.*)$`)
 )
@@ -58,6 +58,8 @@ func (m *Model) buildDetail() {
 	switch {
 	case it.Done():
 		meta = append(meta, m.st.badgeBase.Background(lipgloss.Color(m.Palette.Done)).Render("Done"))
+	case it.Rejected():
+		meta = append(meta, m.st.errorS.Render("Rejected"))
 	default:
 		meta = append(meta, m.st.badge(it.State))
 	}
@@ -66,12 +68,16 @@ func (m *Model) buildDetail() {
 		created += " by " + it.CreatedBy
 	}
 	meta = append(meta, m.st.muted.Render(created))
-	if it.Completed != nil {
-		done := "completed " + it.Completed.Local().Format(dateLayout)
-		if it.CompletedBy != "" {
-			done += " by " + it.CompletedBy
+	if o, ok := it.Outcome(); ok {
+		text, st := "completed", m.st.done
+		if o.Kind == todo.OutcomeRejected {
+			text, st = "rejected", m.st.errorS
 		}
-		meta = append(meta, m.st.done.Render(done))
+		text += " " + o.At.Local().Format(dateLayout)
+		if o.By != "" {
+			text += " by " + o.By
+		}
+		meta = append(meta, st.Render(text))
 	}
 	add(strings.Join(meta, m.st.subtle.Render(" · ")), "")
 	if c := it.ActiveClaim(); c != nil {
@@ -94,18 +100,22 @@ func (m *Model) buildDetail() {
 		depth := map[string]int{it.ID: -1}
 		for _, k := range kids {
 			depth[k.ID] = depth[k.Parent] + 1
-			box, st := "☐ ", m.st.text
+			box, st, boxStyle := "☐ ", m.st.text, m.st.done
 			switch {
 			case k.Done():
-				box, st = "☑ ", m.st.muted
+				box, st, boxStyle = "☑ ", m.st.muted, m.st.done
+			case k.Rejected():
+				box, st, boxStyle = "× ", m.st.muted, m.st.errorS
 			case k.State == todo.Journal:
 				box = "✎ "
 			}
 			where := k.State.Label()
 			if k.Done() {
 				where = "done"
+			} else if k.Rejected() {
+				where = "rejected"
 			}
-			line := strings.Repeat("  ", depth[k.ID]) + m.st.done.Render(box) +
+			line := strings.Repeat("  ", depth[k.ID]) + boxStyle.Render(box) +
 				renderSegs(m.textSegs(k.Title, st), nil) + "  " +
 				lipgloss.NewStyle().Foreground(m.st.stateColor(k.State)).Render(strings.ToLower(where))
 			if c := k.ActiveClaim(); c != nil {
@@ -150,8 +160,11 @@ func (m *Model) buildDetail() {
 // and links.
 func (m *Model) bodyLine(line string) string {
 	if mm := bodyCheckRe.FindStringSubmatch(line); mm != nil {
-		if mm[2] == " " {
+		switch mm[2] {
+		case " ":
 			return mm[1] + m.st.done.Render("☐ ") + renderSegs(m.textSegs(mm[3], m.st.text), nil)
+		case "-":
+			return mm[1] + m.st.errorS.Render("× ") + renderSegs(m.textSegs(mm[3], m.st.muted), nil)
 		}
 		return mm[1] + m.st.done.Render("☑ ") + renderSegs(m.textSegs(mm[3], m.st.muted), nil)
 	}
@@ -212,6 +225,8 @@ func (m *Model) detailKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.openEdit(it.ID)
 	case k(config.Done):
 		return m.toggleDone(it)
+	case k(config.Reject):
+		return m.reject(it)
 	case k(config.Move):
 		m.pendingMove = true
 	case k(config.Delete):

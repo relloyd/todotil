@@ -349,6 +349,11 @@ func TestReplayMatchesLiveState(t *testing.T) {
 	_, err = s.Complete(kids[0].ID, false)
 	require.NoError(t, err)
 	require.NoError(t, s.Delete(kids[1].ID))
+	r := add(t, s, "rejected\n\n- [ ] r1\n- [ ] r2", Next)
+	_, err = s.Reject(r.ID, true)
+	require.NoError(t, err)
+	_, err = s.Edit(r.ID, "rejected\n\n- [ ] r1\n- [-] r2\n- [-] r3", Next)
+	require.NoError(t, err)
 	require.NoError(t, s.SetLinkTitle("https://x.test", "X"))
 	_, err = s.Undo()
 	require.NoError(t, err)
@@ -438,7 +443,7 @@ func TestHistoryRows(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, flatten(s.Board().HistoryRows(tt.key, tt.desc)))
+			assert.Equal(t, tt.want, flatten(s.Board().HistoryRows(tt.key, tt.desc, HistoryAll)))
 		})
 	}
 }

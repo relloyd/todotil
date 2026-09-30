@@ -21,9 +21,9 @@ import (
 	"github.com/relloyd/todotil/internal/todo"
 )
 
-// FormatVersion is written in the header of every log file. Version 2 added
-// claims, notes and created_by/completed_by to items.
-const FormatVersion = 2
+// FormatVersion is written in the header of every log file. Version 3 added
+// rejection outcomes to items.
+const FormatVersion = 3
 
 // DefaultMaxFileSize is the size after which a new log file is started.
 const DefaultMaxFileSize = 10 << 20

@@ -8,31 +8,34 @@ import (
 )
 
 func TestParseCheckboxes(t *testing.T) {
-	body := "intro\n- [ ] one\n  - [x] nested two\n* [X] three\n+ [ ]   \n- [] nope\n-[ ] nope\n- [ ] four  "
+	body := "intro\n- [ ] one\n  - [x] nested two\n* [X] three\n+ [ ]   \n- [] nope\n-[ ] nope\n- [ ] four  \n- [-] five\n- [~] nope"
 	got := ParseCheckboxes(body)
 	assert.Equal(t, []CheckLine{
 		{LineNo: 1, Ordinal: 0, Text: "one"},
 		{LineNo: 2, Ordinal: 1, Text: "nested two", Checked: true},
 		{LineNo: 3, Ordinal: 2, Text: "three", Checked: true},
 		{LineNo: 7, Ordinal: 3, Text: "four"},
+		{LineNo: 8, Ordinal: 4, Text: "five", Rejected: true},
 	}, got)
 }
 
 func TestSetCheckboxLine(t *testing.T) {
 	tests := []struct {
-		body    string
-		line    int
-		text    string
-		checked bool
-		want    string
+		body string
+		line int
+		text string
+		mark string
+		want string
 	}{
-		{"a\n- [ ] x", 1, "y", true, "a\n- [x] y"},
-		{"  * [x] x", 0, "x", false, "  * [ ] x"},
-		{"plain", 0, "y", true, "plain"},
-		{"- [ ] x", 5, "y", true, "- [ ] x"},
+		{"a\n- [ ] x", 1, "y", markDone, "a\n- [x] y"},
+		{"  * [x] x", 0, "x", markOpen, "  * [ ] x"},
+		{"- [ ] x", 0, "x", markRejected, "- [-] x"},
+		{"- [-] x", 0, "x", markOpen, "- [ ] x"},
+		{"plain", 0, "y", markDone, "plain"},
+		{"- [ ] x", 5, "y", markDone, "- [ ] x"},
 	}
 	for _, tt := range tests {
-		assert.Equal(t, tt.want, setCheckboxLine(tt.body, tt.line, tt.text, tt.checked))
+		assert.Equal(t, tt.want, setCheckboxLine(tt.body, tt.line, tt.text, tt.mark))
 	}
 }
 

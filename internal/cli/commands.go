@@ -9,68 +9,6 @@ import (
 	"github.com/relloyd/todotil/internal/todo"
 )
 
-// refJSON identifies an item briefly.
-type refJSON struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	State    string `json:"state"`
-	Done     bool   `json:"done"`
-	Assignee string `json:"assignee,omitempty"`
-}
-
-func ref(it *todo.Item) refJSON {
-	r := refJSON{ID: it.ID, Title: it.Title, State: string(it.State), Done: it.Done()}
-	if c := it.ActiveClaim(); c != nil {
-		r.Assignee = c.Assignee
-	}
-	return r
-}
-
-// itemJSON is the full representation of an item.
-type itemJSON struct {
-	Position     int          `json:"position,omitempty"`
-	ID           string       `json:"id"`
-	Title        string       `json:"title"`
-	Body         string       `json:"body,omitempty"`
-	State        string       `json:"state"`
-	Done         bool         `json:"done"`
-	Created      time.Time    `json:"created"`
-	CreatedBy    string       `json:"created_by,omitempty"`
-	Completed    *time.Time   `json:"completed,omitempty"`
-	CompletedBy  string       `json:"completed_by,omitempty"`
-	Parent       *refJSON     `json:"parent,omitempty"`
-	Claim        *todo.Claim  `json:"claim,omitempty"`
-	OpenChildren int          `json:"open_children"`
-	Children     []itemJSON   `json:"children,omitempty"`
-	Claims       []todo.Claim `json:"claims,omitempty"`
-	Notes        []todo.Note  `json:"notes,omitempty"`
-}
-
-// item builds the JSON for it. full adds body, claim history and notes.
-func item(b *todo.Board, it *todo.Item, full bool) itemJSON {
-	j := itemJSON{
-		ID: it.ID, Title: it.Title, State: string(it.State), Done: it.Done(),
-		Created: it.Created, CreatedBy: it.CreatedBy, Completed: it.Completed, CompletedBy: it.CompletedBy,
-		Claim: it.ActiveClaim(),
-	}
-	if p := b.Get(it.Parent); p != nil {
-		r := ref(p)
-		j.Parent = &r
-	}
-	for _, c := range b.Descendants(it.ID) {
-		if c.Open() {
-			j.OpenChildren++
-		}
-	}
-	if full {
-		j.Body, j.Claims, j.Notes = it.Body, it.Claims, it.Notes
-		for _, c := range b.Children(it.ID) {
-			j.Children = append(j.Children, item(b, c, false))
-		}
-	}
-	return j
-}
-
 // shortID abbreviates an item ID to its shortest unique prefix. Output is
 // produced after any change, so the abbreviations are computed once.
 func (c *ctx) shortID(id string) string {
@@ -206,17 +144,24 @@ func (c *ctx) showText(w io.Writer, j itemJSON) {
 	state := j.State
 	if j.Done {
 		state = "done"
+	} else if j.Rejected {
+		state = "rejected"
 	}
 	fmt.Fprintf(w, "id: %s · %s · created %s", j.ID, state, j.Created.Local().Format("2 Jan 2006 15:04"))
 	if j.CreatedBy != "" {
 		fmt.Fprintf(w, " by %s", j.CreatedBy)
 	}
-	if j.Completed != nil {
-		fmt.Fprintf(w, " · completed %s", j.Completed.Local().Format("2 Jan 2006 15:04"))
-		if j.CompletedBy != "" {
-			fmt.Fprintf(w, " by %s", j.CompletedBy)
+	outcome := func(what string, at *time.Time, by string) {
+		if at == nil {
+			return
+		}
+		fmt.Fprintf(w, " · %s %s", what, at.Local().Format("2 Jan 2006 15:04"))
+		if by != "" {
+			fmt.Fprintf(w, " by %s", by)
 		}
 	}
+	outcome("completed", j.Completed, j.CompletedBy)
+	outcome("rejected", j.RejectedAt, j.RejectedBy)
 	fmt.Fprintln(w)
 	if j.Claim != nil {
 		fmt.Fprintf(w, "claimed by %s (%s) · claim %s\n", j.Claim.Assignee, age(c.now().Sub(j.Claim.At)), j.Claim.ID)

@@ -359,7 +359,7 @@ func TestHistorySortPersists(t *testing.T) {
 	saved, err := config.LoadSettings(h.pathsTo)
 	require.NoError(t, err)
 	assert.Equal(t, config.History{Sort: "completed", Descending: false}, saved.History)
-	assert.Contains(t, h.screen(), "Not completed")
+	assert.Contains(t, h.screen(), "Open and journal notes")
 }
 
 func TestSettingsPane(t *testing.T) {

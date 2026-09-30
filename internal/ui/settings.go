@@ -99,7 +99,7 @@ func (m *Model) settingsItems() []setting {
 			},
 		},
 		{
-			label: "History sort", desc: "Group and order History by created or completed date.",
+			label: "History sort", desc: "Group and order History by created or completed/rejected date.",
 			value:  func(m *Model) string { return m.Settings.History.Sort },
 			change: func(m *Model, _ int) tea.Cmd { return m.toggleSortKey() },
 		},

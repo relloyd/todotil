@@ -408,6 +408,58 @@ func TestCopyAndDelete(t *testing.T) {
 	assert.Equal(t, []string{"note", "boxed"}, h.viewTitles(tabNow))
 }
 
+func TestCopyItemID(t *testing.T) {
+	tests := []struct {
+		name string
+		view string
+	}{
+		{"now", "1"},
+		{"next", "2"},
+		{"later", "3"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.keys(tt.view)
+			h.add("agent task")
+			it := h.m.selected()
+			require.NotNil(t, it)
+
+			h.keys("alt+y")
+			assert.Equal(t, it.ID, h.copied)
+			assert.Contains(t, h.screen(), "Copied ID "+it.ID)
+
+			h.keys("enter", "alt+y")
+			assert.Equal(t, it.ID, h.copied)
+			assert.Contains(t, h.screen(), "Copied ID "+it.ID)
+		})
+	}
+}
+
+func TestCopyItemIDUnavailableInHistory(t *testing.T) {
+	h := newHarness(t)
+	h.add("journal note", "alt+j")
+	h.keys("4", "alt+y")
+	assert.Empty(t, h.copied)
+
+	h.keys("enter", "alt+y")
+	assert.Empty(t, h.copied)
+}
+
+func TestCopyChildItemID(t *testing.T) {
+	h := newHarness(t)
+	h.add("parent")
+	h.keys("A")
+	h.typeText("child")
+	h.keys("enter")
+	it := h.m.selected()
+	require.NotNil(t, it)
+	assert.Equal(t, "child", it.Title)
+
+	h.keys("alt+y")
+	assert.Equal(t, it.ID, h.copied)
+}
+
 func TestMouse(t *testing.T) {
 	h := newHarness(t)
 	h.add("parent note\n\n- [ ] kid", "alt+j")

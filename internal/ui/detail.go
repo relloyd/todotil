@@ -218,6 +218,8 @@ func (m *Model) detailKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.askDelete(it)
 	case k(config.Copy):
 		return m.copyItem(it)
+	case k(config.CopyID) && it.Open():
+		return m.copyItemID(it)
 	case k(config.Unassign):
 		return m.unassign(it)
 	case k(config.AddChild):

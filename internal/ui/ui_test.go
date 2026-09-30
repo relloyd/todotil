@@ -408,6 +408,68 @@ func TestCopyAndDelete(t *testing.T) {
 	assert.Equal(t, []string{"note", "boxed"}, h.viewTitles(tabNow))
 }
 
+func TestCopyItemID(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup []string // keys pressed after adding the item
+		view  string
+		extra []string // classification keys for the editor
+	}{
+		{"now", nil, "1", nil},
+		{"next", nil, "2", nil},
+		{"later", nil, "3", nil},
+		{"journal in history", []string{"4"}, "1", []string{"alt+j"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.keys(tt.view)
+			h.add("agent task", tt.extra...)
+			h.keys(tt.setup...)
+			it := h.m.selected()
+			require.NotNil(t, it)
+			require.Equal(t, "agent task", it.Title)
+
+			h.keys("ctrl+y")
+			assert.Equal(t, it.ID, h.copied)
+			assert.Contains(t, h.screen(), "Copied ID "+it.ID)
+
+			// Clear the list copy so the detail view has to copy again.
+			h.copied, h.m.status = "", ""
+			h.keys("enter", "ctrl+y")
+			assert.Equal(t, modeDetail, h.m.mode)
+			assert.Equal(t, it.ID, h.copied)
+			assert.Contains(t, h.screen(), "Copied ID "+it.ID)
+		})
+	}
+}
+
+func TestCopyDoneItemIDFromDetail(t *testing.T) {
+	h := newHarness(t)
+	h.add("finished task")
+	it := h.m.selected()
+	require.NotNil(t, it)
+
+	h.keys("enter", "x")
+	require.NotNil(t, h.m.board().Get(it.ID).Completed)
+	h.keys("ctrl+y")
+	assert.Equal(t, it.ID, h.copied)
+}
+
+func TestCopyChildItemID(t *testing.T) {
+	h := newHarness(t)
+	h.add("parent")
+	h.keys("A")
+	h.typeText("child")
+	h.keys("enter")
+	it := h.m.selected()
+	require.NotNil(t, it)
+	assert.Equal(t, "child", it.Title)
+
+	h.keys("ctrl+y")
+	assert.Equal(t, it.ID, h.copied)
+}
+
 func TestMouse(t *testing.T) {
 	h := newHarness(t)
 	h.add("parent note\n\n- [ ] kid", "alt+j")

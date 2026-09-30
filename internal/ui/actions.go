@@ -325,6 +325,10 @@ func (m *Model) copyItem(it *todo.Item) tea.Cmd {
 	return m.copyText(itemMarkdown(m.board(), it), "Copied "+quote(it.Title))
 }
 
+func (m *Model) copyItemID(it *todo.Item) tea.Cmd {
+	return m.copyText(it.ID, "Copied ID "+it.ID)
+}
+
 func (m *Model) copyText(s, ok string) tea.Cmd {
 	if m.Clipboard != nil {
 		if err := m.Clipboard(s); err == nil {

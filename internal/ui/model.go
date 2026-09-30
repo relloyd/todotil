@@ -389,6 +389,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		if m.editor != nil {
 			m.editor.ta, cmd = m.editor.ta.Update(msg)
+		} else if f := m.currentFilter(); f != nil && f.editing {
+			cmd = m.filterInput(f, msg) // e.g. text pasted with ctrl+v
 		}
 	}
 	return m, tea.Batch(cmd, m.fetchVisibleLinks())

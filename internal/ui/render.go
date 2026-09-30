@@ -89,13 +89,6 @@ func renderRow(left, right []seg, width int, bg color.Color) string {
 	return renderSegs(left, bg) + pad.Render(strings.Repeat(" ", max(0, gap))) + renderSegs(right, bg)
 }
 
-// fit truncates s to fit in w columns, leaving at least one space, and
-// pads it to exactly w.
-func fit(s string, w int) string {
-	s = ansi.Truncate(s, w-1, "…")
-	return s + strings.Repeat(" ", max(0, w-ansi.StringWidth(s)))
-}
-
 // clean makes text safe for a single line.
 func clean(s string) string {
 	s = strings.ReplaceAll(s, "\t", "  ")
@@ -406,7 +399,10 @@ func (m *Model) listView() string {
 
 func (m *Model) statusView() string {
 	w := m.width
+	f := m.currentFilter()
 	switch {
+	case f != nil && (f.editing || (m.status == "" && f.active())):
+		return m.filterView(f)
 	case m.confirm != nil:
 		return ansi.Truncate(m.st.warn.Render(" "+m.confirm.prompt+" ")+m.st.key.Render("y")+m.st.muted.Render("/")+m.st.key.Render("n"), w, "…")
 	case m.pendingMove:
@@ -436,16 +432,32 @@ func (m *Model) hint(a config.Action, desc string) string {
 	return m.st.key.Render(m.Keys.First(a)) + " " + m.st.muted.Render(desc)
 }
 
+// overlayEscHint says what esc does in settings or help: clear the filter
+// first, then close.
+func (m *Model) overlayEscHint() string {
+	if f := m.currentFilter(); f != nil && f.active() {
+		return m.st.key.Render("esc") + m.st.muted.Render(" clear filter")
+	}
+	return m.st.key.Render("esc") + m.st.muted.Render(" close")
+}
+
 func (m *Model) hintsView() string {
 	var hs []string
 	switch {
 	case m.editor != nil:
 		return ""
+	case m.currentFilter() != nil && m.currentFilter().editing:
+		move := " select"
+		if m.mode == modeHelp {
+			move = " scroll"
+		}
+		hs = []string{m.st.key.Render("↑↓") + m.st.muted.Render(move), m.st.key.Render("enter") + m.st.muted.Render(" keep filter"),
+			m.st.key.Render("esc") + m.st.muted.Render(" clear")}
 	case m.mode == modeSettings:
 		hs = []string{m.st.key.Render("↑↓") + m.st.muted.Render(" select"), m.st.key.Render("enter/←→") + m.st.muted.Render(" change"),
-			m.st.key.Render("backspace") + m.st.muted.Render(" reset key"), m.st.key.Render("esc") + m.st.muted.Render(" close")}
+			m.st.key.Render("backspace") + m.st.muted.Render(" reset key"), m.hint(config.Filter, "filter"), m.overlayEscHint()}
 	case m.mode == modeHelp:
-		hs = []string{m.st.key.Render("↑↓") + m.st.muted.Render(" scroll"), m.st.key.Render("esc") + m.st.muted.Render(" close")}
+		hs = []string{m.st.key.Render("↑↓") + m.st.muted.Render(" scroll"), m.hint(config.Filter, "filter"), m.overlayEscHint()}
 	case m.mode == modeDetail:
 		hs = []string{m.st.key.Render("esc") + m.st.muted.Render(" back"), m.hint(config.Edit, "edit"), m.hint(config.Done, "done")}
 		if it := m.board().Get(m.detail.id); it != nil && it.Open() {

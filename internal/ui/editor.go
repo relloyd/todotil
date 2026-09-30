@@ -139,6 +139,9 @@ func (m *Model) handlePaste(msg tea.PasteMsg) tea.Cmd {
 		m.editor.ta, cmd = m.editor.ta.Update(msg)
 		return cmd
 	}
+	if f := m.currentFilter(); f != nil && f.editing {
+		return m.filterInput(f, msg)
+	}
 	if m.mode == modeList && m.confirm == nil && strings.TrimSpace(msg.Content) != "" {
 		return m.openAdd("", msg.Content)
 	}

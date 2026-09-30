@@ -60,9 +60,11 @@ todotil help agents          # instructions to paste into other repos' AGENTS.md
 **Done**
 - `done` works wherever the item has been moved since it was claimed.
 - It completes the item and records `completed_by`.
-- If the item is a checkbox child, its line in the parent note is ticked.
+- If the item is a checkbox child, its line in the parent note is ticked
+  (`[x]`). A rejected checkbox child's line is marked `[-]`.
 - If the user already completed the item, `done` succeeds with
-  `already_done: true` and reports who completed it.
+  `already_done: true` and reports who completed it. If they have since
+  reopened or rejected it, `done` fails with exit 6 instead.
 - If the item has open children, `done` fails with exit 5 unless you pass `--cascade`.
 - Rejection is a separate outcome, not completion. It ends an active claim with
   exit 6; `show` reports `rejected`, `rejected_at` and `rejected_by`.

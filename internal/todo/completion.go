@@ -62,19 +62,15 @@ func (s *Service) Reopen(id string) (Result, error) {
 	return Result{Item: s.board.Get(id)}, nil
 }
 
-// setDone sets or clears the completion outcome on it (a mutable copy), stages
-// it and mirrors the done state onto its checkbox line.
+// setDone sets or clears the outcome on it (a mutable copy), stages it and
+// mirrors the outcome onto its checkbox line. Clearing also reopens a
+// rejected item.
 func (t *tx) setDone(it *Item, done bool) {
 	switch {
 	case done && !it.Done():
-		now := t.now
-		it.Completed = &now
-		it.CompletedBy = t.s.Actor
-		it.RejectedAt, it.RejectedBy = nil, ""
-		it.endClaim(EndDone, t.now, "")
+		it.markDone(t.now, t.s.Actor)
 	case !done && (it.Done() || it.Rejected()):
-		it.Completed, it.CompletedBy = nil, ""
-		it.RejectedAt, it.RejectedBy = nil, ""
+		it.clearOutcome()
 	}
 	t.put(it)
 	if it.Source != "" {

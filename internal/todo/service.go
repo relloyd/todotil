@@ -78,7 +78,7 @@ type Record struct {
 
 // SyncSummary describes what a checkbox sync changed.
 type SyncSummary struct {
-	Created, Rewritten, Removed, Detached, Completed, Reopened int
+	Created, Rewritten, Removed, Detached, Completed, Rejected, Reopened int
 }
 
 // BulkThreshold is how many removals or rewrites in a single sync count as
@@ -564,7 +564,7 @@ func (s *Service) Outdent(id string) error {
 // viewSiblings returns the items displayed at the same level as it in its
 // active view, in order.
 func (b *Board) viewSiblings(it *Item) []*Item {
-	in := func(x *Item) bool { return x.State == it.State && !x.Done() && !x.Rejected() }
+	in := func(x *Item) bool { return x.State == it.State && x.Open() }
 	var sibs []*Item
 	if p := b.Get(it.Parent); p != nil && in(p) {
 		for _, c := range b.Children(p.ID) {
@@ -599,7 +599,7 @@ func (b *Board) sourceKids(id string) []*Item {
 }
 
 // updateSourceLine rewrites the checkbox line backing child so it matches
-// the child's title and done state.
+// the child's title and outcome.
 func (t *tx) updateSourceLine(child *Item) {
 	src := t.get(child.Source)
 	if src == nil {
@@ -609,8 +609,8 @@ func (t *tx) updateSourceLine(child *Item) {
 		if l.Ordinal != child.Line {
 			continue
 		}
-		if l.Text != child.Title || l.Checked != child.Done() {
-			src.Body = setCheckboxLine(src.Body, l.LineNo, child.Title, child.Done())
+		if mark := checkMark(child); l.Text != child.Title || l.mark() != mark {
+			src.Body = setCheckboxLine(src.Body, l.LineNo, child.Title, mark)
 			t.put(src)
 		}
 		return
@@ -679,15 +679,16 @@ func (t *tx) syncBody(id string, childState State) SyncSummary {
 				sum.Rewritten++
 			}
 			c.Line = l.Ordinal
-			if l.Checked != c.Done() && c.State.Active() {
-				if l.Checked {
-					now := t.now
-					c.Completed, c.CompletedBy = &now, t.s.Actor
-					c.RejectedAt, c.RejectedBy = nil, ""
-					c.endClaim(EndDone, t.now, "")
+			if mark := l.mark(); mark != checkMark(c) && c.State.Active() {
+				switch mark {
+				case markDone:
+					c.markDone(t.now, t.s.Actor)
 					sum.Completed++
-				} else {
-					c.Completed, c.CompletedBy = nil, ""
+				case markRejected:
+					c.markRejected(t.now, t.s.Actor)
+					sum.Rejected++
+				default:
+					c.clearOutcome()
 					sum.Reopened++
 				}
 			}
@@ -705,9 +706,11 @@ func (t *tx) syncBody(id string, childState State) SyncSummary {
 			CreatedBy: t.s.Actor,
 			Order:     t.orderBetween(orderOf, has, i),
 		}
-		if l.Checked {
-			now := t.now
-			c.Completed, c.CompletedBy = &now, t.s.Actor
+		switch l.mark() {
+		case markDone:
+			c.markDone(t.now, t.s.Actor)
+		case markRejected:
+			c.markRejected(t.now, t.s.Actor)
 		}
 		orderOf[i], has[i] = c.Order, true
 		t.put(c)

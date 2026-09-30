@@ -39,15 +39,11 @@ func (f HistoryFilter) Label() string {
 	}
 }
 
-// HistoryRows returns every item grouped by local day of the sort key. A child
-// is nested under its parent when both fall in the same day group; otherwise
-// it is shown at the top level of its own group with its parent as context.
-func (b *Board) HistoryRows(key SortKey, desc bool) []Row {
-	return b.HistoryRowsFiltered(key, desc, HistoryAll)
-}
-
-// HistoryRowsFiltered returns rows for the selected History outcome filter.
-func (b *Board) HistoryRowsFiltered(key SortKey, desc bool, filter HistoryFilter) []Row {
+// HistoryRows returns the items that pass filter, grouped by local day of the
+// sort key. A child is nested under its parent when both fall in the same day
+// group; otherwise it is shown at the top level of its own group with its
+// parent as context.
+func (b *Board) HistoryRows(key SortKey, desc bool, filter HistoryFilter) []Row {
 	matches := func(it *Item) bool {
 		switch filter {
 		case HistoryCompleted:

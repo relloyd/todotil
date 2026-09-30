@@ -231,6 +231,7 @@ func syncText(s todo.SyncSummary) string {
 	add(s.Removed, "removed")
 	add(s.Detached, "detached")
 	add(s.Completed, "completed")
+	add(s.Rejected, "rejected")
 	add(s.Reopened, "reopened")
 	if len(parts) == 0 {
 		return ""

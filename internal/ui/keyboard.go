@@ -124,7 +124,7 @@ func (m *Model) listKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.openEdit(it.ID)
 	case k(config.Done):
 		return m.toggleDone(it)
-	case k(config.Reject) && it.Open():
+	case k(config.Reject):
 		return m.reject(it)
 	case k(config.Delete):
 		return m.askDelete(it)

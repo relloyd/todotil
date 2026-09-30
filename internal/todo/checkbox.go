@@ -8,13 +8,43 @@ import (
 
 // CheckLine is a Markdown checkbox line found in a body.
 type CheckLine struct {
-	LineNo  int    // index into the body's lines
-	Ordinal int    // index among checkbox lines
-	Text    string // text after the checkbox
-	Checked bool
+	LineNo   int    // index into the body's lines
+	Ordinal  int    // index among checkbox lines
+	Text     string // text after the checkbox
+	Checked  bool   // [x] or [X]
+	Rejected bool   // [-], the common Markdown mark for a cancelled task
 }
 
-var checkboxRe = regexp.MustCompile(`^(\s*[-*+]\s+\[)([ xX])(\]\s+)(.*?)\s*$`)
+// Checkbox marks written to bodies for each outcome.
+const (
+	markOpen     = " "
+	markDone     = "x"
+	markRejected = "-"
+)
+
+var checkboxRe = regexp.MustCompile(`^(\s*[-*+]\s+\[)([ xX-])(\]\s+)(.*?)\s*$`)
+
+// mark returns the line's checkbox mark, normalising [X] to [x].
+func (l CheckLine) mark() string {
+	switch {
+	case l.Checked:
+		return markDone
+	case l.Rejected:
+		return markRejected
+	}
+	return markOpen
+}
+
+// checkMark returns the checkbox mark for the outcome of it.
+func checkMark(it *Item) string {
+	switch {
+	case it.Done():
+		return markDone
+	case it.Rejected():
+		return markRejected
+	}
+	return markOpen
+}
 
 // ParseCheckboxes returns the checkbox lines of body in order.
 func ParseCheckboxes(body string) []CheckLine {
@@ -25,17 +55,18 @@ func ParseCheckboxes(body string) []CheckLine {
 			continue
 		}
 		out = append(out, CheckLine{
-			LineNo:  i,
-			Ordinal: len(out),
-			Text:    m[4],
-			Checked: m[2] != " ",
+			LineNo:   i,
+			Ordinal:  len(out),
+			Text:     m[4],
+			Checked:  m[2] == "x" || m[2] == "X",
+			Rejected: m[2] == "-",
 		})
 	}
 	return out
 }
 
-// setCheckboxLine rewrites line lineNo of body with new text and state.
-func setCheckboxLine(body string, lineNo int, text string, checked bool) string {
+// setCheckboxLine rewrites line lineNo of body with new text and mark.
+func setCheckboxLine(body string, lineNo int, text, mark string) string {
 	lines := strings.Split(body, "\n")
 	if lineNo < 0 || lineNo >= len(lines) {
 		return body
@@ -43,10 +74,6 @@ func setCheckboxLine(body string, lineNo int, text string, checked bool) string 
 	m := checkboxRe.FindStringSubmatch(lines[lineNo])
 	if m == nil {
 		return body
-	}
-	mark := " "
-	if checked {
-		mark = "x"
 	}
 	lines[lineNo] = m[1] + mark + m[3] + text
 	return strings.Join(lines, "\n")

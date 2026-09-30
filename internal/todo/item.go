@@ -138,6 +138,59 @@ func (it *Item) Rejected() bool { return it.RejectedAt != nil }
 // Open reports whether the item is shown in one of the active views.
 func (it *Item) Open() bool { return it.State.Active() && !it.Done() && !it.Rejected() }
 
+// OutcomeKind names how an item was closed.
+type OutcomeKind string
+
+// Outcome kinds.
+const (
+	OutcomeDone     OutcomeKind = "done"
+	OutcomeRejected OutcomeKind = "rejected"
+)
+
+// Outcome is how, when and by whom an item was closed.
+type Outcome struct {
+	Kind OutcomeKind
+	At   time.Time
+	By   string // agent name; empty for the TUI user
+}
+
+// Outcome returns the item's outcome, or false if it has none.
+func (it *Item) Outcome() (Outcome, bool) {
+	switch {
+	case it.Completed != nil:
+		return Outcome{Kind: OutcomeDone, At: *it.Completed, By: it.CompletedBy}, true
+	case it.RejectedAt != nil:
+		return Outcome{Kind: OutcomeRejected, At: *it.RejectedAt, By: it.RejectedBy}, true
+	}
+	return Outcome{}, false
+}
+
+// Completion and rejection are separate fields that must never both be set.
+// Every write goes through markDone, markRejected or clearOutcome so the
+// rule lives in one place (see docs/design/item-outcome.md). They change it
+// in place, so only call them on a mutable copy from tx.get or Clone.
+
+// markDone records completion by actor and ends any active claim as done.
+func (it *Item) markDone(at time.Time, by string) {
+	it.Completed, it.CompletedBy = &at, by
+	it.RejectedAt, it.RejectedBy = nil, ""
+	it.endClaim(EndDone, at, "")
+}
+
+// markRejected records rejection by actor and ends any active claim as
+// rejected.
+func (it *Item) markRejected(at time.Time, by string) {
+	it.RejectedAt, it.RejectedBy = &at, by
+	it.Completed, it.CompletedBy = nil, ""
+	it.endClaim(EndRejected, at, "")
+}
+
+// clearOutcome reopens a completed or rejected item.
+func (it *Item) clearOutcome() {
+	it.Completed, it.CompletedBy = nil, ""
+	it.RejectedAt, it.RejectedBy = nil, ""
+}
+
 // Text joins title and body using the Git commit message convention.
 func (it *Item) Text() string {
 	if it.Body == "" {

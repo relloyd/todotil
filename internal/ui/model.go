@@ -183,7 +183,7 @@ func (m *Model) refresh() {
 		prevID := m.selectedIDIn(t)
 		if t == tabHistory {
 			key := todo.SortKey(m.Settings.History.Sort)
-			m.rows[t] = b.HistoryRowsFiltered(key, m.Settings.History.Descending, m.historyFilter)
+			m.rows[t] = b.HistoryRows(key, m.Settings.History.Descending, m.historyFilter)
 		} else {
 			m.rows[t] = b.ViewRows(tabStates[t])
 		}

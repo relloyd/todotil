@@ -182,15 +182,20 @@ rejection timestamp.
 separate from `Parent`, so re-parenting doesn't break the link. `Line` is
 the checkbox ordinal at the last sync. Matching order: exact text, then near
 match (normalised text or Levenshtein ≤ max(2, 20%)), then position. The body
-owns the wording. The child owns done-ness, but a body edit that ticks or
-unticks a line wins because it is the newest action. Ticking a rejected child
-through its source body completes it and clears its rejection. Removing a
-completed or rejected checkbox child detaches it so its history survives.
-Every path that changes a sourced child's title or done state must call
-`updateSourceLine`. Deleting one calls `removeSourceLine`, which also shifts
-later ordinals. If a sync
-removes or rewrites ≥ `BulkThreshold` children, the UI shows a warning with an
-undo hint.
+owns the wording. The child owns its outcome, which the line mirrors as
+`[ ]` open, `[x]` done or `[-]` rejected. A body edit that changes a line's
+mark wins because it is the newest action, so ticking a rejected child's line
+completes it. Removing a completed or rejected checkbox child detaches it so
+its history survives. Every path that changes a sourced child's title or
+outcome must call `updateSourceLine`. Deleting one calls `removeSourceLine`,
+which also shifts later ordinals. If a sync removes or rewrites ≥
+`BulkThreshold` children, the UI shows a warning with an undo hint.
+
+**Outcomes.** Completion and rejection are separate fields that must never
+both be set. Write them only through `Item.markDone`, `markRejected` and
+`clearOutcome`, and read them through `Done()`, `Rejected()` or `Outcome()`.
+[docs/design/item-outcome.md](docs/design/item-outcome.md) describes the
+planned single-field model.
 
 **Config files** are TOML, written atomically (temp file, fsync, rename).
 Missing keys fall back to defaults and are normalised. If a file fails to parse,
@@ -241,7 +246,7 @@ Anything older than `backup_keep_days` (10) is pruned.
   (`newTestService`). `TestReplayMatchesLiveState` checks that the log replays to
   exactly the live board, so keep it passing whenever you add an operation.
 - UI: `internal/ui/ui_test.go` has a `harness` that sends real
-  `tea.KeyPressMsg` / mouse / paste messages (`keyMsg("alt+x")`,
+  `tea.KeyPressMsg` / mouse / paste messages (`keyMsg("ctrl+x")`,
   `h.typeText`, `h.add`) and asserts on `ansi.Strip(View().Content)` and
   model state. Prefer driving behaviour through keys over calling methods
   directly.

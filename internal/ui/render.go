@@ -313,29 +313,22 @@ func (m *Model) historyMeta(it *todo.Item) []seg {
 		created = "created " + it.Created.Local().Format("2 Jan 2006 15:04")
 	}
 	out = append(out, seg{text: created, st: m.st.muted})
-	if it.Completed != nil {
-		done := "done "
-		if it.CompletedBy != "" {
-			done += "by " + it.CompletedBy + " "
+	if o, ok := it.Outcome(); ok {
+		text := string(o.Kind) + " "
+		if o.By != "" {
+			text += "by " + o.By + " "
 		}
+		// Grouped by outcome day, the date is in the header already.
 		if byOutcome {
-			done += it.Completed.Local().Format("15:04")
+			text += o.At.Local().Format("15:04")
 		} else {
-			done += it.Completed.Local().Format("2 Jan 2006 15:04")
+			text += o.At.Local().Format("2 Jan 2006 15:04")
 		}
-		out = append(out, seg{text: " · ", st: m.st.subtle}, seg{text: done, st: m.st.done})
-	}
-	if it.RejectedAt != nil {
-		rejected := "rejected "
-		if it.RejectedBy != "" {
-			rejected += "by " + it.RejectedBy + " "
+		st := m.st.done
+		if o.Kind == todo.OutcomeRejected {
+			st = m.st.errorS
 		}
-		if byOutcome {
-			rejected += it.RejectedAt.Local().Format("15:04")
-		} else {
-			rejected += it.RejectedAt.Local().Format("2 Jan 2006 15:04")
-		}
-		out = append(out, seg{text: " · ", st: m.st.subtle}, seg{text: rejected, st: m.st.errorS})
+		out = append(out, seg{text: " · ", st: m.st.subtle}, seg{text: text, st: st})
 	}
 	return append(out, seg{text: " ", st: m.st.muted})
 }
@@ -359,9 +352,15 @@ func age(d time.Duration) string {
 	return fmt.Sprintf("%dy", int(d.Hours()/24/365))
 }
 
-func dayLabel(day, now time.Time) string {
+// dayLabel names a History day group. The zero day holds items with no
+// outcome date: open items and journal notes, or only journal notes when
+// that filter is on.
+func dayLabel(day, now time.Time, filter todo.HistoryFilter) string {
 	if day.IsZero() {
-		return "Not completed"
+		if filter == todo.HistoryJournal {
+			return "Journal notes"
+		}
+		return "Open and journal notes"
 	}
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	switch {
@@ -395,7 +394,7 @@ func (m *Model) listView() string {
 		}
 		r := rows[l.row]
 		if r.Kind == todo.RowDay {
-			label := dayLabel(r.Day, m.Now())
+			label := dayLabel(r.Day, m.Now(), m.historyFilter)
 			rule := strings.Repeat("─", max(0, m.width-ansi.StringWidth(label)-5))
 			out = append(out, " "+m.st.dayHeader.Render(label)+" "+m.st.rule.Render(rule))
 			continue
@@ -457,8 +456,11 @@ func (m *Model) hintsView() string {
 			m.hint(config.SelectMode, "select"))
 	default:
 		hs = []string{m.hint(config.Add, "add"), m.hint(config.Edit, "edit"), m.hint(config.Open, "open"),
-			m.hint(config.Done, "done"), m.hint(config.Reject, "reject"), m.hint(config.Move, "move"), m.hint(config.Indent, "indent"),
-			m.hint(config.Undo, "undo")}
+			m.hint(config.Done, "done")}
+		if it := m.selected(); it != nil && it.Open() {
+			hs = append(hs, m.hint(config.Reject, "reject"))
+		}
+		hs = append(hs, m.hint(config.Move, "move"), m.hint(config.Indent, "indent"), m.hint(config.Undo, "undo"))
 		if m.tab == tabHistory {
 			hs = append(hs, m.hint(config.HistoryFilter, "filter: "+m.historyFilter.Label()),
 				m.hint(config.SortKey, "sort"), m.hint(config.SortDir, "reverse"))

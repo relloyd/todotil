@@ -106,7 +106,7 @@ func TestRejectRequiresAnOpenItem(t *testing.T) {
 	}
 }
 
-func TestHistoryRowsFilteredByOutcome(t *testing.T) {
+func TestHistoryRowsByOutcome(t *testing.T) {
 	s, _ := newTestService()
 	completed := add(t, s, "completed", Now)
 	rejected := add(t, s, "rejected", Next)
@@ -130,14 +130,14 @@ func TestHistoryRowsFilteredByOutcome(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rows := s.Board().HistoryRowsFiltered(SortCreated, false, tt.filter)
+			rows := s.Board().HistoryRows(SortCreated, false, tt.filter)
 			assert.Equal(t, tt.want, titles(rows))
 		})
 	}
 
-	rejectedRows := s.Board().HistoryRowsFiltered(SortCompleted, false, HistoryRejected)
+	rejectedRows := s.Board().HistoryRows(SortCompleted, false, HistoryRejected)
 	assert.Equal(t, []string{rejected.Title}, titles(rejectedRows))
-	assert.NotEmpty(t, s.Board().HistoryRows(SortCreated, false))
+	assert.NotEmpty(t, s.Board().HistoryRows(SortCreated, false, HistoryAll))
 	assert.NotNil(t, s.Board().Get(open.ID))
 	assert.NotNil(t, s.Board().Get(journal.ID))
 }
@@ -194,4 +194,95 @@ func TestRemovingRejectedCheckboxPreservesHistoryItem(t *testing.T) {
 	require.NotNil(t, preserved)
 	assert.Empty(t, preserved.Source)
 	assert.True(t, preserved.Rejected())
+}
+
+func TestRejectedCheckboxChildMarksBodyLine(t *testing.T) {
+	s, _ := newTestService()
+	note := add(t, s, "note\n\n- [ ] a\n- [ ] b", Now)
+	kid := func(title string) *Item {
+		for _, c := range s.Board().Children(note.ID) {
+			if c.Title == title {
+				return c
+			}
+		}
+		require.FailNow(t, "no child "+title)
+		return nil
+	}
+	body := func() string { return s.Board().Get(note.ID).Body }
+
+	_, err := s.Reject(kid("a").ID, false)
+	require.NoError(t, err)
+	assert.Equal(t, "- [-] a\n- [ ] b", body())
+
+	_, err = s.Reopen(kid("a").ID)
+	require.NoError(t, err)
+	assert.Equal(t, "- [ ] a\n- [ ] b", body())
+
+	// Rejecting the note cascades to both children and marks both lines.
+	_, err = s.Reject(note.ID, true)
+	require.NoError(t, err)
+	assert.Equal(t, "- [-] a\n- [-] b", body())
+}
+
+func TestCheckboxBodyEditRejectsAndReopens(t *testing.T) {
+	s, _ := newAgentService(t)
+	note := add(t, s, "note\n\n- [ ] a", Now)
+	children := s.Board().Children(note.ID)
+	require.Len(t, children, 1)
+	a := children[0]
+	s.Actor = "agent"
+	_, err := s.Claim(Target{ID: a.ID}, Now, false)
+	require.NoError(t, err)
+	s.Actor = ""
+
+	res, err := s.Edit(note.ID, "note\n\n- [-] a\n- [-] new", Now)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Sync.Rejected)
+	assert.Equal(t, 1, res.Sync.Created)
+	got := s.Board().Get(a.ID)
+	assert.True(t, got.Rejected())
+	assert.Equal(t, EndRejected, got.Claims[0].End)
+	for _, c := range s.Board().Children(note.ID) {
+		assert.True(t, c.Rejected(), c.Title)
+	}
+
+	res, err = s.Edit(note.ID, "note\n\n- [ ] a\n- [-] new", Now)
+	require.NoError(t, err)
+	assert.Equal(t, 1, res.Sync.Reopened)
+	assert.True(t, s.Board().Get(a.ID).Open())
+}
+
+func TestFinishAfterDoneClaimWasReopened(t *testing.T) {
+	tests := []struct {
+		name   string
+		reject bool
+		want   string
+	}{
+		{"reopened", false, "completed, then reopened"},
+		{"reopened and rejected", true, "completed, then reopened and rejected"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := newAgentService(t)
+			it := add(t, s, "task", Now)
+			s.Actor = "agent"
+			claimed, err := s.Claim(Target{ID: it.ID}, Now, false)
+			require.NoError(t, err)
+			s.Actor = ""
+			_, err = s.Complete(it.ID, false)
+			require.NoError(t, err)
+			_, err = s.Reopen(it.ID)
+			require.NoError(t, err)
+			if tt.reject {
+				_, err = s.Reject(it.ID, false)
+				require.NoError(t, err)
+			}
+
+			s.Actor = "agent"
+			_, err = s.Finish(claimed.Claim.ID, false, "")
+			var ended *ClaimEndedError
+			require.ErrorAs(t, err, &ended)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
 }

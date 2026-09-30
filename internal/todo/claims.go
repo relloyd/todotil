@@ -39,6 +39,12 @@ func (e *ClaimEndedError) Error() string {
 		why = "unassigned by the user"
 	case EndDemoted:
 		why = "ended because the item became a journal note"
+	case EndDone:
+		// Only reported when the item has since been reopened; see Finish.
+		why = "the item was completed, then reopened"
+		if e.Item.Rejected() {
+			why = "the item was completed, then reopened and rejected"
+		}
 	}
 	msg := fmt.Sprintf("claim %s on %q is no longer valid: %s", e.Claim.ID, e.Item.Title, why)
 	if e.Claim.Reason != "" {
@@ -211,7 +217,8 @@ type DoneResult struct {
 }
 
 // Finish completes the item behind an active claim. If the claim already
-// ended because the item was completed, it succeeds with AlreadyDone. With
+// ended because the item was completed, and it still is, it succeeds with
+// AlreadyDone. With
 // open children it returns *NeedsConfirmError unless cascade is set. An
 // optional note is recorded first.
 func (s *Service) Finish(claimID string, cascade bool, note string) (DoneResult, error) {
@@ -220,7 +227,7 @@ func (s *Service) Finish(claimID string, cascade bool, note string) (DoneResult,
 		res = DoneResult{}
 		it, c, err := t.activeClaim(claimID)
 		var ended *ClaimEndedError
-		if errors.As(err, &ended) && c.End == EndDone {
+		if errors.As(err, &ended) && c.End == EndDone && it.Done() {
 			res = DoneResult{Item: it, Claim: c, AlreadyDone: true}
 			return nil
 		}

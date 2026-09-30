@@ -29,7 +29,7 @@ func (m *Model) openDetail(id string) {
 }
 
 var (
-	bodyCheckRe  = regexp.MustCompile(`^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$`)
+	bodyCheckRe  = regexp.MustCompile(`^(\s*)[-*+]\s+\[([ xX-])\]\s+(.*)$`)
 	bodyBulletRe = regexp.MustCompile(`^(\s*)[-*+]\s+(.*)$`)
 	bodyHeadRe   = regexp.MustCompile(`^#{1,6}\s+(.*)$`)
 )
@@ -68,19 +68,16 @@ func (m *Model) buildDetail() {
 		created += " by " + it.CreatedBy
 	}
 	meta = append(meta, m.st.muted.Render(created))
-	if it.Completed != nil {
-		done := "completed " + it.Completed.Local().Format(dateLayout)
-		if it.CompletedBy != "" {
-			done += " by " + it.CompletedBy
+	if o, ok := it.Outcome(); ok {
+		text, st := "completed", m.st.done
+		if o.Kind == todo.OutcomeRejected {
+			text, st = "rejected", m.st.errorS
 		}
-		meta = append(meta, m.st.done.Render(done))
-	}
-	if it.RejectedAt != nil {
-		rejected := "rejected " + it.RejectedAt.Local().Format(dateLayout)
-		if it.RejectedBy != "" {
-			rejected += " by " + it.RejectedBy
+		text += " " + o.At.Local().Format(dateLayout)
+		if o.By != "" {
+			text += " by " + o.By
 		}
-		meta = append(meta, m.st.errorS.Render(rejected))
+		meta = append(meta, st.Render(text))
 	}
 	add(strings.Join(meta, m.st.subtle.Render(" · ")), "")
 	if c := it.ActiveClaim(); c != nil {
@@ -163,8 +160,11 @@ func (m *Model) buildDetail() {
 // and links.
 func (m *Model) bodyLine(line string) string {
 	if mm := bodyCheckRe.FindStringSubmatch(line); mm != nil {
-		if mm[2] == " " {
+		switch mm[2] {
+		case " ":
 			return mm[1] + m.st.done.Render("☐ ") + renderSegs(m.textSegs(mm[3], m.st.text), nil)
+		case "-":
+			return mm[1] + m.st.errorS.Render("× ") + renderSegs(m.textSegs(mm[3], m.st.muted), nil)
 		}
 		return mm[1] + m.st.done.Render("☑ ") + renderSegs(m.textSegs(mm[3], m.st.muted), nil)
 	}
@@ -225,7 +225,7 @@ func (m *Model) detailKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.openEdit(it.ID)
 	case k(config.Done):
 		return m.toggleDone(it)
-	case k(config.Reject) && it.Open():
+	case k(config.Reject):
 		return m.reject(it)
 	case k(config.Move):
 		m.pendingMove = true

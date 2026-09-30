@@ -308,7 +308,7 @@ type Row struct {
 // tree. Items whose parent is not in the view are shown at the top level
 // with their parent's title as context.
 func (b *Board) ViewRows(s State) []Row {
-	in := func(it *Item) bool { return it.State == s && !it.Done() && !it.Rejected() }
+	in := func(it *Item) bool { return it.State == s && it.Open() }
 	var tops []*Item
 	for _, it := range b.items {
 		if !in(it) {

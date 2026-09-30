@@ -118,7 +118,7 @@ var Actions = []ActionInfo{
 	{Edit, GroupList, "Edit the selected item", []string{"e"}},
 	{Open, GroupList, "Open the detail view", []string{"enter"}},
 	{Done, GroupList, "Toggle done", []string{"x", "space"}},
-	{Reject, GroupList, "Reject item and open children", []string{"alt+x"}},
+	{Reject, GroupList, "Reject item and open children", []string{"ctrl+x"}},
 	{Delete, GroupList, "Delete the selected item", []string{"D"}},
 	{Copy, GroupList, "Copy item (and children) to the clipboard", []string{"y"}},
 	{CopyID, GroupList, "Copy the selected item's ID to the clipboard", []string{"ctrl+y"}},

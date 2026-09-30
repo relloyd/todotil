@@ -85,19 +85,38 @@ func (m *Model) toggleDone(it *todo.Item) tea.Cmd {
 		m.refresh()
 		return m.info("Reopened " + quote(it.Title))
 	}
-	_, err := m.Service.Complete(it.ID, false)
+	return m.closeItem(it, "Complete", "Completed", m.Service.Complete)
+}
+
+func (m *Model) reject(it *todo.Item) tea.Cmd {
+	if it.Rejected() {
+		return m.info(quote(it.Title) + " is already rejected; " + m.Keys.First(config.Done) + " reopens it")
+	}
+	return m.closeItem(it, "Reject", "Rejected", m.Service.Reject)
+}
+
+// closeItem completes or rejects it through fn. If it has open children,
+// fn refuses with *todo.NeedsConfirmError and the user is asked before fn
+// runs again with force, taking the children too.
+func (m *Model) closeItem(it *todo.Item, verb, done string, fn func(id string, force bool) (todo.Result, error)) tea.Cmd {
+	_, err := fn(it.ID, false)
 	var nc *todo.NeedsConfirmError
 	switch {
 	case errors.As(err, &nc):
 		id, title := it.ID, it.Title
 		m.confirm = &confirmState{
-			prompt: fmt.Sprintf("Complete %s and its %d open %s?", quote(title), nc.Open, plural(nc.Open, "child", "children")),
+			prompt: fmt.Sprintf("%s %s and its %d open %s?", verb, quote(title), nc.Open, plural(nc.Open, "child", "children")),
 			onYes: func() tea.Cmd {
-				if _, err := m.Service.Complete(id, true); err != nil {
+				res, err := fn(id, true)
+				if err != nil {
 					return m.fail(err)
 				}
 				m.refresh()
-				return m.info("Completed " + quote(title) + " and its children" + m.undoHint())
+				msg := done + " " + quote(title)
+				if res.Followers > 0 {
+					msg += " and its children"
+				}
+				return m.info(msg + m.undoHint())
 			},
 		}
 		return nil
@@ -105,36 +124,7 @@ func (m *Model) toggleDone(it *todo.Item) tea.Cmd {
 		return m.fail(err)
 	}
 	m.refresh()
-	return m.info("Completed " + quote(it.Title) + m.undoHint())
-}
-
-func (m *Model) reject(it *todo.Item) tea.Cmd {
-	_, err := m.Service.Reject(it.ID, false)
-	var confirm *todo.NeedsConfirmError
-	if errors.As(err, &confirm) {
-		id, title := it.ID, it.Title
-		m.confirm = &confirmState{
-			prompt: fmt.Sprintf("Reject %s and its %d open %s?", quote(title), confirm.Open, plural(confirm.Open, "child", "children")),
-			onYes: func() tea.Cmd {
-				result, err := m.Service.Reject(id, true)
-				if err != nil {
-					return m.fail(err)
-				}
-				m.refresh()
-				message := "Rejected " + quote(title)
-				if result.Followers > 0 {
-					message += " and its children"
-				}
-				return m.info(message + m.undoHint())
-			},
-		}
-		return nil
-	}
-	if err != nil {
-		return m.fail(err)
-	}
-	m.refresh()
-	return m.info("Rejected " + quote(it.Title) + m.undoHint())
+	return m.info(done + " " + quote(it.Title) + m.undoHint())
 }
 
 func (m *Model) unassign(it *todo.Item) tea.Cmd {
@@ -256,6 +246,13 @@ func (m *Model) jumpTo(id string) tea.Cmd {
 	}
 	t := tabOf(it)
 	i := m.rowIndex(t, id)
+	cleared := false
+	if i < 0 && t == tabHistory && m.historyFilter != todo.HistoryAll {
+		// The History filter hides it: show everything rather than fail.
+		m.historyFilter = todo.HistoryAll
+		m.refresh()
+		i, cleared = m.rowIndex(t, id), true
+	}
 	if i < 0 {
 		return m.info("Can't find " + quote(it.Title))
 	}
@@ -267,6 +264,9 @@ func (m *Model) jumpTo(id string) tea.Cmd {
 	m.tab = t
 	m.cursor[t] = i
 	m.ensureVisible(t)
+	if cleared {
+		return m.info("History filter cleared to show " + quote(it.Title))
+	}
 	return nil
 }
 
@@ -342,8 +342,11 @@ func itemMarkdown(b *todo.Board, it *todo.Item) string {
 				first = false
 			}
 			mark := " "
-			if c.Done() {
+			switch {
+			case c.Done():
 				mark = "x"
+			case c.Rejected():
+				mark = "-" // body lines of rejected checkbox children match
 			}
 			fmt.Fprintf(&sb, "%s- [%s] %s\n", strings.Repeat("  ", depth), mark, c.Title)
 			walk(c.ID, depth+1)

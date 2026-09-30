@@ -151,18 +151,17 @@ func (c *ctx) showText(w io.Writer, j itemJSON) {
 	if j.CreatedBy != "" {
 		fmt.Fprintf(w, " by %s", j.CreatedBy)
 	}
-	if j.Completed != nil {
-		fmt.Fprintf(w, " · completed %s", j.Completed.Local().Format("2 Jan 2006 15:04"))
-		if j.CompletedBy != "" {
-			fmt.Fprintf(w, " by %s", j.CompletedBy)
+	outcome := func(what string, at *time.Time, by string) {
+		if at == nil {
+			return
+		}
+		fmt.Fprintf(w, " · %s %s", what, at.Local().Format("2 Jan 2006 15:04"))
+		if by != "" {
+			fmt.Fprintf(w, " by %s", by)
 		}
 	}
-	if j.RejectedAt != nil {
-		fmt.Fprintf(w, " · rejected %s", j.RejectedAt.Local().Format("2 Jan 2006 15:04"))
-		if j.RejectedBy != "" {
-			fmt.Fprintf(w, " by %s", j.RejectedBy)
-		}
-	}
+	outcome("completed", j.Completed, j.CompletedBy)
+	outcome("rejected", j.RejectedAt, j.RejectedBy)
 	fmt.Fprintln(w)
 	if j.Claim != nil {
 		fmt.Fprintf(w, "claimed by %s (%s) · claim %s\n", j.Claim.Assignee, age(c.now().Sub(j.Claim.At)), j.Claim.ID)

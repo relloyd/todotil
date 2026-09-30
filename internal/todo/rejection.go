@@ -47,10 +47,12 @@ func (t *tx) reject(id string, force bool) (int, error) {
 	return len(open), nil
 }
 
+// setRejected rejects it (a mutable copy), stages it and mirrors the
+// rejection onto its checkbox line.
 func (t *tx) setRejected(it *Item) {
-	now := t.now
-	it.RejectedAt = &now
-	it.RejectedBy = t.s.Actor
-	it.endClaim(EndRejected, t.now, "")
+	it.markRejected(t.now, t.s.Actor)
 	t.put(it)
+	if it.Source != "" {
+		t.updateSourceLine(it)
+	}
 }

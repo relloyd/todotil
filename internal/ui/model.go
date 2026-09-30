@@ -513,7 +513,7 @@ func (m *Model) listKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.askDelete(it)
 	case k(config.Copy):
 		return m.copyItem(it)
-	case k(config.CopyID) && it.Open():
+	case k(config.CopyID):
 		return m.copyItemID(it)
 	case k(config.Unassign):
 		return m.unassign(it)

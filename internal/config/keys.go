@@ -118,7 +118,7 @@ var Actions = []ActionInfo{
 	{Done, GroupList, "Toggle done", []string{"x", "space"}},
 	{Delete, GroupList, "Delete the selected item", []string{"D"}},
 	{Copy, GroupList, "Copy item (and children) to the clipboard", []string{"y"}},
-	{CopyID, GroupList, "Copy active item ID to the clipboard", []string{"alt+y"}},
+	{CopyID, GroupList, "Copy the selected item's ID to the clipboard", []string{"ctrl+y"}},
 	{Unassign, GroupList, "Unassign: end an agent's claim", []string{"U"}},
 	{ItemUp, GroupList, "Move item up", []string{"shift+up", "alt+k"}},
 	{ItemDown, GroupList, "Move item down", []string{"shift+down", "alt+j"}},

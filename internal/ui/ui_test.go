@@ -410,40 +410,50 @@ func TestCopyAndDelete(t *testing.T) {
 
 func TestCopyItemID(t *testing.T) {
 	tests := []struct {
-		name string
-		view string
+		name  string
+		setup []string // keys pressed after adding the item
+		view  string
+		extra []string // classification keys for the editor
 	}{
-		{"now", "1"},
-		{"next", "2"},
-		{"later", "3"},
+		{"now", nil, "1", nil},
+		{"next", nil, "2", nil},
+		{"later", nil, "3", nil},
+		{"journal in history", []string{"4"}, "1", []string{"alt+j"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.keys(tt.view)
-			h.add("agent task")
+			h.add("agent task", tt.extra...)
+			h.keys(tt.setup...)
 			it := h.m.selected()
 			require.NotNil(t, it)
+			require.Equal(t, "agent task", it.Title)
 
-			h.keys("alt+y")
+			h.keys("ctrl+y")
 			assert.Equal(t, it.ID, h.copied)
 			assert.Contains(t, h.screen(), "Copied ID "+it.ID)
 
-			h.keys("enter", "alt+y")
+			// Clear the list copy so the detail view has to copy again.
+			h.copied, h.m.status = "", ""
+			h.keys("enter", "ctrl+y")
+			assert.Equal(t, modeDetail, h.m.mode)
 			assert.Equal(t, it.ID, h.copied)
 			assert.Contains(t, h.screen(), "Copied ID "+it.ID)
 		})
 	}
 }
 
-func TestCopyItemIDUnavailableInHistory(t *testing.T) {
+func TestCopyDoneItemIDFromDetail(t *testing.T) {
 	h := newHarness(t)
-	h.add("journal note", "alt+j")
-	h.keys("4", "alt+y")
-	assert.Empty(t, h.copied)
+	h.add("finished task")
+	it := h.m.selected()
+	require.NotNil(t, it)
 
-	h.keys("enter", "alt+y")
-	assert.Empty(t, h.copied)
+	h.keys("enter", "x")
+	require.NotNil(t, h.m.board().Get(it.ID).Completed)
+	h.keys("ctrl+y")
+	assert.Equal(t, it.ID, h.copied)
 }
 
 func TestCopyChildItemID(t *testing.T) {
@@ -456,7 +466,7 @@ func TestCopyChildItemID(t *testing.T) {
 	require.NotNil(t, it)
 	assert.Equal(t, "child", it.Title)
 
-	h.keys("alt+y")
+	h.keys("ctrl+y")
 	assert.Equal(t, it.ID, h.copied)
 }
 

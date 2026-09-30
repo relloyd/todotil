@@ -436,7 +436,8 @@ func (m *Model) hintsView() string {
 	case m.mode == modeDetail:
 		hs = []string{m.st.key.Render("esc") + m.st.muted.Render(" back"), m.hint(config.Edit, "edit"), m.hint(config.Done, "done"),
 			m.hint(config.Move, "move"), m.hint(config.JumpParent, "parent"), m.hint(config.JumpChild, "child"),
-			m.hint(config.JumpBack, "back"), m.hint(config.Copy, "copy"), m.hint(config.SelectMode, "select")}
+			m.hint(config.JumpBack, "back"), m.hint(config.Copy, "copy"), m.hint(config.CopyID, "copy id"),
+			m.hint(config.SelectMode, "select")}
 	default:
 		hs = []string{m.hint(config.Add, "add"), m.hint(config.Edit, "edit"), m.hint(config.Open, "open"),
 			m.hint(config.Done, "done"), m.hint(config.Move, "move"), m.hint(config.Indent, "indent"),

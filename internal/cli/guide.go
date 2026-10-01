@@ -25,10 +25,15 @@ lists. You can take items from it, report progress and mark them done with the
    notes and claim history.
 4. **Report progress.** Run ` + "`todotil note <claim-id> \"text\" --json`" + ` at meaningful
    milestones. Notes are shown to the user and never change the item's text.
-5. **Finish.** Run ` + "`todotil done <claim-id> [--note \"summary\"] --json`" + `.
+5. **Link pull requests.** As soon as you open a GitHub PR for the item, post its
+   full URL as a note: ` + "`todotil note <claim-id> \"PR: https://github.com/<owner>/<repo>/pull/<n>\" --json`" + `.
+   - Post one note per PR, including PRs in other repositories.
+   - Notes stay on the item after it's done, so this is the user's record of
+     where the work landed. Mention the PR again in your ` + "`done`" + ` note.
+6. **Finish.** Run ` + "`todotil done <claim-id> [--note \"summary\"] --json`" + `.
    - If you can't finish, run ` + "`todotil release <claim-id> --reason \"why\" --json`" + `
-     instead. The item stays put for someone else.
-6. **Follow-ups.** Run ` + "`todotil add \"title\" --as <you> [--under <claim-id>] --json`" + `
+     instead. The item stays put for someone else. Link any PR you opened first.
+7. **Follow-ups.** Run ` + "`todotil add \"title\" --as <you> [--under <claim-id>] --json`" + `
    to record work you discovered.
    - The first line is the title. After a blank line comes the body, where
      ` + "`- [ ] step`" + ` lines become child todos.

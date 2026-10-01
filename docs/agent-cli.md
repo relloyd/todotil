@@ -72,7 +72,9 @@ todotil help agents          # instructions to paste into other repos' AGENTS.md
 **Release** gives the item up. It stays where it is and becomes claimable again.
 
 **Notes** are timestamped records on the item. They are not part of its body.
-The detail view shows them, and so do `show` and copy.
+The detail view shows them, and so do `show` and copy. The agent guide asks
+agents to post a note with the URL of every GitHub PR they open for an item,
+so a finished item keeps a record of where its work landed.
 
 **Add**
 - `add` creates an item in Now unless you pass `--list`. The one exception:

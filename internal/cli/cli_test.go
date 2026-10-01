@@ -273,6 +273,7 @@ func TestHelp(t *testing.T) {
 	r = f.run("help", "agents")
 	assert.Contains(t, r.stdout, "## Working from the todotil task list")
 	assert.Contains(t, r.stdout, "claim next --as <you> --json")
+	assert.Contains(t, r.stdout, "**Link pull requests.**")
 }
 
 // Several agents racing for work each get a different item, and every

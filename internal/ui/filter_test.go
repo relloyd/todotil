@@ -202,7 +202,7 @@ func TestSettingsFilterMatchesWholeKeys(t *testing.T) {
 	// like "created/completed", matches too.)
 	h.keys("ctrl+u")
 	h.typeText("/")
-	require.Equal(t, "Filter the settings or help list", h.m.settings.current().label)
+	require.Equal(t, "Search the current list, or filter settings and help", h.m.settings.current().label)
 	assert.Equal(t, []int{0}, h.m.settings.shown[h.m.settings.cursor].value)
 
 	// A key in a later position is highlighted where it is shown: "q/ctrl+c".

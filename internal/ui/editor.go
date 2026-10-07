@@ -178,9 +178,13 @@ func (m *Model) submitEditor() tea.Cmd {
 	} else {
 		t := tabOf(res.Item)
 		if t == m.tab {
-			m.cursor[t] = max(0, m.rowIndex(t, res.Item.ID))
+			i := m.rowIndex(t, res.Item.ID)
+			m.cursor[t] = max(0, i)
 			m.ensureVisible(t)
 			msgs = append(msgs, "Added "+quote(res.Item.Title))
+			if i < 0 && m.filters[t].active() {
+				msgs = append(msgs, "hidden by the search")
+			}
 		} else {
 			msgs = append(msgs, "Added "+quote(res.Item.Title)+" to "+t.label())
 		}

@@ -111,10 +111,14 @@ type Model struct {
 	mode          mode
 	backMode      mode // mode to return to from settings/help
 
-	rows   [numTabs][]todo.Row
-	lines  [numTabs][]lineRef
-	cursor [numTabs]int
-	offset [numTabs]int
+	rows [numTabs][]todo.Row
+	// filters are the per-tab searches; rows holds only what they match, and
+	// totals counts the items each tab would show unfiltered.
+	filters [numTabs]filterState
+	totals  [numTabs]int
+	lines   [numTabs][]lineRef
+	cursor  [numTabs]int
+	offset  [numTabs]int
 
 	detail   detailState
 	editor   *editorState
@@ -178,25 +182,33 @@ func (m *Model) contentHeight() int { return max(1, m.height-4) }
 // refresh recomputes every tab's rows, keeping each cursor on the same item
 // where it still exists.
 func (m *Model) refresh() {
-	b := m.board()
 	for t := range numTabs {
-		prevID := m.selectedIDIn(t)
-		if t == tabHistory {
-			key := todo.SortKey(m.Settings.History.Sort)
-			m.rows[t] = b.HistoryRows(key, m.Settings.History.Descending, m.historyFilter)
-		} else {
-			m.rows[t] = b.ViewRows(tabStates[t])
-		}
-		m.lines[t] = buildLines(m.rows[t], t != tabHistory)
-		if i := m.rowIndex(t, prevID); i >= 0 {
-			m.cursor[t] = i
-		}
-		m.clampCursor(t, 1)
-		m.ensureVisible(t)
+		m.refreshTab(t)
 	}
 	if m.mode == modeDetail {
 		m.buildDetail()
 	}
+}
+
+// refreshTab recomputes one tab's rows, applying its search.
+func (m *Model) refreshTab(t tab) {
+	b := m.board()
+	prevID := m.selectedIDIn(t)
+	var rows []todo.Row
+	if t == tabHistory {
+		key := todo.SortKey(m.Settings.History.Sort)
+		rows = b.HistoryRows(key, m.Settings.History.Descending, m.historyFilter)
+	} else {
+		rows = b.ViewRows(tabStates[t])
+	}
+	m.totals[t] = countItems(rows)
+	m.rows[t] = m.filterRows(t, rows)
+	m.lines[t] = buildLines(m.rows[t], t != tabHistory)
+	if i := m.rowIndex(t, prevID); i >= 0 {
+		m.cursor[t] = i
+	}
+	m.clampCursor(t, 1)
+	m.ensureVisible(t)
 }
 
 // buildLines lays out rows as lines: active views get a separator before

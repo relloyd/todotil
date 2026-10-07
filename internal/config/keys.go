@@ -100,7 +100,7 @@ var Actions = []ActionInfo{
 	{ViewHistory, GroupGlobal, "Go to History", []string{"4"}},
 	{OpenSettings, GroupGlobal, "Open settings", []string{","}},
 	{Help, GroupGlobal, "Show all key bindings", []string{"?"}},
-	{Filter, GroupGlobal, "Filter the settings or help list", []string{"/"}},
+	{Filter, GroupGlobal, "Search the current list, or filter settings and help", []string{"/"}},
 	{Undo, GroupGlobal, "Undo last change", []string{"u", "ctrl+z"}},
 	{SelectMode, GroupGlobal, "Release the mouse for text selection", []string{"v"}},
 

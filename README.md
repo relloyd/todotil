@@ -12,7 +12,7 @@ todotil        # data lives in ~/.config/todotil (override with --home or TODOTI
 ## Using it
 
 - **Views:** `1` Now · `2` Next · `3` Later · `4` History, or `tab` to cycle.
-  `,` opens settings and `?` lists every key. In either, `/` filters the list by name, description or key (`ctrl+x`).
+  `,` opens settings and `?` lists every key. In either, `/` filters the list by name, description or key (`ctrl+x`). In Now, Next, Later and History, `/` searches item titles as you type; `enter` keeps the search, `esc` clears it, and each tab remembers its own.
 - **Add:** `a` opens the dialog. The first line is the title, then a blank line and an optional body.
   Lines like `- [ ] call Sam` become child todos. `[x]` marks one done and `[-]` rejected. The entry goes to the view you
   are in. Use `alt+n` / `alt+x` / `alt+l` / `alt+j` to send it to Now / Next / Later / Journal

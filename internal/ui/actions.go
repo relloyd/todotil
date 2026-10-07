@@ -247,6 +247,7 @@ func (m *Model) jumpTo(id string) tea.Cmd {
 	t := tabOf(it)
 	i := m.rowIndex(t, id)
 	var cleared []string
+	savedSearch, savedHistory := m.filters[t], m.historyFilter
 	if i < 0 && m.filters[t].active() {
 		// The search hides it: show everything rather than fail.
 		m.filters[t].clear()
@@ -262,6 +263,11 @@ func (m *Model) jumpTo(id string) tea.Cmd {
 		cleared = append(cleared, "History filter")
 	}
 	if i < 0 {
+		// Don't leave the user's search and History filter cleared for nothing.
+		if len(cleared) > 0 {
+			m.filters[t], m.historyFilter = savedSearch, savedHistory
+			m.refresh()
+		}
 		return m.info("Can't find " + quote(it.Title))
 	}
 	m.jumps = append(m.jumps, m.here())

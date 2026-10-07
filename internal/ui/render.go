@@ -405,8 +405,6 @@ func (m *Model) statusView() string {
 	w := m.width
 	f := m.currentFilter()
 	switch {
-	case f != nil && (f.editing || (m.status == "" && f.active())):
-		return m.filterView(f)
 	case m.confirm != nil:
 		return ansi.Truncate(m.st.warn.Render(" "+m.confirm.prompt+" ")+m.st.key.Render("y")+m.st.muted.Render("/")+m.st.key.Render("n"), w, "…")
 	case m.pendingMove:
@@ -419,6 +417,8 @@ func (m *Model) statusView() string {
 		}
 		parts = append(parts, m.st.muted.Render("esc cancel"))
 		return ansi.Truncate(strings.Join(parts, "  "), w, "…")
+	case f != nil && (f.editing || (m.status == "" && f.active())):
+		return m.filterView(f)
 	case m.status != "":
 		st := m.st.text
 		switch m.statusKind {

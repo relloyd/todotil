@@ -145,6 +145,10 @@ func (m *Model) listKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.unassign(it)
 	case k(config.Move):
 		m.pendingMove = true
+	case m.filters[m.tab].query() != "" && (k(config.ItemUp) || k(config.ItemDown) || k(config.ItemTop) ||
+		k(config.ItemBottom) || k(config.Indent) || k(config.Outdent)):
+		// These act on an item's real siblings, most of which a search hides.
+		return m.warn("Clear the search (esc) to reorder or indent")
 	case k(config.ItemUp):
 		return m.reorder(it, todo.Up)
 	case k(config.ItemDown):

@@ -155,3 +155,72 @@ func TestJumpClearsSearchThatHidesTarget(t *testing.T) {
 	assert.False(t, h.m.filters[tabNow].active())
 	assert.Contains(t, h.screen(), "Search cleared to show “parent”")
 }
+
+func TestSearchDoesNotHideConfirmOrMovePrompts(t *testing.T) {
+	h := newHarness(t)
+	h.add("alpha")
+	h.keys("/")
+	h.typeText("alp")
+	h.keys("enter")
+	h.m.status = ""
+
+	h.keys("m")
+	assert.Contains(t, h.screen(), "Move to:")
+	h.keys("esc")
+	h.m.status = ""
+
+	h.keys("D")
+	require.NotNil(t, h.m.confirm)
+	assert.Contains(t, h.screen(), "Delete")
+	h.keys("n")
+	h.m.status = ""
+	assert.Contains(t, h.screen(), "/ alp", "the applied search returns once the prompt is answered")
+}
+
+func TestSearchRefusesReorderAndIndent(t *testing.T) {
+	h := newHarness(t)
+	h.add("alpha")
+	h.add("beta")
+	h.keys("/")
+	h.typeText("beta")
+	h.keys("enter")
+	before := h.svc.Board().ViewRows(todo.Now)
+	for _, k := range []string{"alt+k", "alt+j", ">", "<"} {
+		h.keys(k)
+		assert.Contains(t, h.screen(), "Clear the search", k)
+		h.m.status = ""
+	}
+	after := h.svc.Board().ViewRows(todo.Now)
+	require.Len(t, after, len(before))
+	for i := range before {
+		assert.Same(t, before[i].Item, after[i].Item, "nothing changed")
+	}
+
+	// With the search cleared they work again.
+	h.keys("esc", "alt+k")
+	assert.NotContains(t, h.screen(), "Clear the search")
+}
+
+func TestSearchHiddenAddKeepsCursorAndEditNotes(t *testing.T) {
+	h := newHarness(t)
+	h.add("report one")
+	h.add("report two")
+	h.add("report three")
+	h.keys("/")
+	h.typeText("report")
+	h.keys("enter", "down", "down")
+	want := h.selectedTitle()
+
+	h.add("buy milk")
+	assert.Contains(t, h.screen(), "hidden by the search")
+	assert.Equal(t, want, h.selectedTitle(), "the cursor stays on the same item")
+
+	// Editing an item so it stops matching says so as well.
+	h.keys("e")
+	require.NotNil(t, h.m.editor)
+	h.keys("ctrl+a", "ctrl+k")
+	h.typeText("something else")
+	h.keys("enter")
+	assert.Contains(t, h.screen(), "Saved")
+	assert.Contains(t, h.screen(), "hidden by the search")
+}

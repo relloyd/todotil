@@ -4,10 +4,33 @@ A terminal todo and meeting-notes tracker built around a **Now / Next / Later**
 workflow, with a browsable History, undo, mouse support and plain-text
 storage.
 
+## Quick start
+
+Requires Go 1.27 or newer. Install directly with Go; no extra tools or source
+checkout are needed:
+
 ```sh
-task install   # checks everything, then installs `todotil`
-todotil        # data lives in ~/.config/todotil (override with --home or TODOTIL_HOME)
+go install github.com/relloyd/todotil@latest
+todotil
 ```
+
+To install from a source checkout and run the project's checks first, you can
+use `task install`. `task` is an optional command runner; this repo's
+`Taskfile.yml` defines the commands it can run. Install `task` once with Go:
+
+```sh
+go install github.com/go-task/task/v3/cmd/task@latest
+```
+
+Then, from the repository directory, run:
+
+```sh
+task install
+```
+
+Go installs commands into `$GOBIN`, or `$GOPATH/bin` if `GOBIN` is unset. Add
+that directory to your `PATH` if `todotil` or `task` isn't found. Todotil stores
+data in `~/.config/todotil`; override this with `--home` or `TODOTIL_HOME`.
 
 ## Using it
 

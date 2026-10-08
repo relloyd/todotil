@@ -246,14 +246,28 @@ func (m *Model) jumpTo(id string) tea.Cmd {
 	}
 	t := tabOf(it)
 	i := m.rowIndex(t, id)
-	cleared := false
+	var cleared []string
+	savedSearch, savedHistory := m.filters[t], m.historyFilter
+	if i < 0 && m.filters[t].active() {
+		// The search hides it: show everything rather than fail.
+		m.filters[t].clear()
+		m.refresh()
+		i = m.rowIndex(t, id)
+		cleared = append(cleared, "Search")
+	}
 	if i < 0 && t == tabHistory && m.historyFilter != todo.HistoryAll {
-		// The History filter hides it: show everything rather than fail.
+		// The History filter hides it too.
 		m.historyFilter = todo.HistoryAll
 		m.refresh()
-		i, cleared = m.rowIndex(t, id), true
+		i = m.rowIndex(t, id)
+		cleared = append(cleared, "History filter")
 	}
 	if i < 0 {
+		// Don't leave the user's search and History filter cleared for nothing.
+		if len(cleared) > 0 {
+			m.filters[t], m.historyFilter = savedSearch, savedHistory
+			m.refresh()
+		}
 		return m.info("Can't find " + quote(it.Title))
 	}
 	m.jumps = append(m.jumps, m.here())
@@ -264,8 +278,8 @@ func (m *Model) jumpTo(id string) tea.Cmd {
 	m.tab = t
 	m.cursor[t] = i
 	m.ensureVisible(t)
-	if cleared {
-		return m.info("History filter cleared to show " + quote(it.Title))
+	if len(cleared) > 0 {
+		return m.info(strings.Join(cleared, " and ") + " cleared to show " + quote(it.Title))
 	}
 	return nil
 }

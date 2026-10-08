@@ -12,6 +12,8 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/relloyd/todotil/internal/fuzzy"
+	"github.com/relloyd/todotil/internal/links"
+	"github.com/relloyd/todotil/internal/todo"
 )
 
 // filterState is a fuzzy filter over a list. The query is typed at a prompt
@@ -55,6 +57,14 @@ func (m *Model) newFilterInput() textinput.Model {
 	return in
 }
 
+// stop closes the prompt but keeps the query.
+func (f *filterState) stop() {
+	if f.editing {
+		f.editing = false
+		f.input.Blur()
+	}
+}
+
 // clear drops the query and closes the prompt.
 func (f *filterState) clear() {
 	f.input.Reset()
@@ -95,6 +105,8 @@ func (m *Model) filterInput(f *filterState, msg tea.Msg) tea.Cmd {
 // refilter applies a changed query to the open pane.
 func (m *Model) refilter() {
 	switch m.mode {
+	case modeList:
+		m.refilterList()
 	case modeSettings:
 		m.filterSettings()
 	case modeHelp:
@@ -105,6 +117,8 @@ func (m *Model) refilter() {
 // currentFilter is the filter of the open settings or help pane, if any.
 func (m *Model) currentFilter() *filterState {
 	switch m.mode {
+	case modeList:
+		return &m.filters[m.tab]
 	case modeSettings:
 		return &m.settings.filter
 	case modeHelp:
@@ -117,6 +131,8 @@ func (m *Model) currentFilter() *filterState {
 // many there are.
 func (m *Model) filterCounts() (int, int) {
 	switch m.mode {
+	case modeList:
+		return countItems(m.rows[m.tab]), m.totals[m.tab]
 	case modeSettings:
 		return m.settings.matched, m.settings.total
 	case modeHelp:
@@ -220,4 +236,103 @@ func matchRow(query string, keys []string, text string, mode fuzzy.Mode, desc st
 		offset += utf8.RuneCountInString(k) + 1 // the "/" separator
 	}
 	return keyPos, pos[len(keys)], pos[len(keys)+1], true
+}
+
+// listFilterKey handles a key while the search prompt of the current tab is
+// open: navigation moves the cursor over the matches, everything else edits
+// the query.
+func (m *Model) listFilterKey(msg tea.KeyPressMsg) tea.Cmd {
+	h := m.contentHeight()
+	switch msg.String() {
+	case "down", "ctrl+n":
+		m.moveCursor(1)
+	case "up", "ctrl+p":
+		m.moveCursor(-1)
+	case "pgdown":
+		m.moveCursor(h / 2)
+	case "pgup":
+		m.moveCursor(-h / 2)
+	default:
+		changed, cmd := m.filters[m.tab].key(msg)
+		if changed {
+			m.refilterList()
+		}
+		return cmd
+	}
+	return nil
+}
+
+// refilterList applies a changed search to the current tab. The cursor stays
+// on its item while that still matches, and otherwise goes to the first match.
+func (m *Model) refilterList() {
+	t := m.tab
+	prev := m.selectedIDIn(t)
+	m.refreshTab(t)
+	if m.rowIndex(t, prev) < 0 {
+		m.cursor[t], m.offset[t] = 0, 0
+		m.clampCursor(t, 1)
+		m.ensureVisible(t)
+	}
+}
+
+// filterRows keeps the item rows of tab t whose title matches its search.
+// Matches are shown flat, as top-level rows with their parent's title as
+// context, since a match's parent often doesn't match. Day headers stay only
+// above surviving rows.
+func (m *Model) filterRows(t tab, rows []todo.Row) []todo.Row {
+	q := m.filters[t].query()
+	if q == "" {
+		return rows
+	}
+	b := m.board()
+	out := make([]todo.Row, 0, len(rows))
+	day := -1 // index in out of a header with no item yet
+	for _, r := range rows {
+		if r.Kind == todo.RowDay {
+			out = append(out, r)
+			day = len(out) - 1
+			continue
+		}
+		if _, ok := fuzzy.MatchFields(q, fuzzy.Field{Text: clean(r.Item.Title), Mode: fuzzy.Fuzzy}); !ok {
+			continue
+		}
+		r.Depth, r.Context = 0, ""
+		if p := b.Get(r.Item.Parent); p != nil {
+			r.Context = p.Title
+		}
+		out = append(out, r)
+		day = -1
+	}
+	if day >= 0 {
+		out = out[:day]
+	}
+	return m.dropEmptyDays(out)
+}
+
+// dropEmptyDays removes day headers that no item follows.
+func (m *Model) dropEmptyDays(rows []todo.Row) []todo.Row {
+	out := rows[:0]
+	for i, r := range rows {
+		if r.Kind == todo.RowDay && (i+1 >= len(rows) || rows[i+1].Kind == todo.RowDay) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// titleSegs renders an item title, highlighting the characters the current
+// search matched. Titles with links show shortened labels that don't line
+// up with the typed text, so those are left unhighlighted.
+func (m *Model) titleSegs(title string, st lipgloss.Style) []seg {
+	q := m.filters[m.tab].query()
+	text := clean(title)
+	if q == "" || len(links.Find(text)) > 0 {
+		return m.textSegs(title, st)
+	}
+	pos, ok := fuzzy.MatchFields(q, fuzzy.Field{Text: text, Mode: fuzzy.Fuzzy})
+	if !ok {
+		return m.textSegs(title, st)
+	}
+	return matchSegs(text, pos[0], st, m.st.match)
 }

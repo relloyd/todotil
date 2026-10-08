@@ -154,7 +154,7 @@ func (m *Model) headerTabs() (string, []int) {
 	for t := range numTabs {
 		label := t.label()
 		if t != tabHistory {
-			label = fmt.Sprintf("%s %d", label, countItems(m.rows[t]))
+			label = fmt.Sprintf("%s %d", label, m.totals[t])
 		}
 		label = fmt.Sprintf("%d %s", int(t)+1, label)
 		st := m.st.tabIdle
@@ -271,7 +271,7 @@ func (m *Model) itemLine(r todo.Row, selected, history bool) string {
 	if it.CreatedBy != "" {
 		left = append(left, seg{text: agentMark, st: m.st.agent})
 	}
-	left = append(left, m.textSegs(it.Title, titleSt)...)
+	left = append(left, m.titleSegs(it.Title, titleSt)...)
 	if it.Body != "" || len(it.Notes) > 0 {
 		left = append(left, seg{text: " ≡", st: m.st.subtle})
 	}
@@ -368,6 +368,10 @@ func dayLabel(day, now time.Time, filter todo.HistoryFilter) string {
 func (m *Model) listView() string {
 	t := m.tab
 	rows, lines := m.rows[t], m.lines[t]
+	if len(rows) == 0 && m.filters[t].query() != "" {
+		msg := "No matches. Press " + m.Keys.First(config.Filter) + " to refine the search or esc to clear it."
+		return lipgloss.Place(m.width, m.contentHeight(), lipgloss.Center, lipgloss.Center, m.st.muted.Render(msg))
+	}
 	if len(rows) == 0 {
 		msg := fmt.Sprintf("Nothing in %s yet. Press %s to add an entry.", t.label(), m.Keys.First(config.Add))
 		return lipgloss.Place(m.width, m.contentHeight(), lipgloss.Center, lipgloss.Center, m.st.muted.Render(msg))
@@ -401,8 +405,6 @@ func (m *Model) statusView() string {
 	w := m.width
 	f := m.currentFilter()
 	switch {
-	case f != nil && (f.editing || (m.status == "" && f.active())):
-		return m.filterView(f)
 	case m.confirm != nil:
 		return ansi.Truncate(m.st.warn.Render(" "+m.confirm.prompt+" ")+m.st.key.Render("y")+m.st.muted.Render("/")+m.st.key.Render("n"), w, "…")
 	case m.pendingMove:
@@ -415,6 +417,8 @@ func (m *Model) statusView() string {
 		}
 		parts = append(parts, m.st.muted.Render("esc cancel"))
 		return ansi.Truncate(strings.Join(parts, "  "), w, "…")
+	case f != nil && (f.editing || (m.status == "" && f.active())):
+		return m.filterView(f)
 	case m.status != "":
 		st := m.st.text
 		switch m.statusKind {
@@ -467,8 +471,12 @@ func (m *Model) hintsView() string {
 			m.hint(config.JumpBack, "back"), m.hint(config.Copy, "copy"), m.hint(config.CopyID, "copy id"),
 			m.hint(config.SelectMode, "select"))
 	default:
-		hs = []string{m.hint(config.Add, "add"), m.hint(config.Edit, "edit"), m.hint(config.Open, "open"),
-			m.hint(config.Done, "done")}
+		hs = nil
+		if m.filters[m.tab].active() {
+			hs = append(hs, m.st.key.Render("esc")+m.st.muted.Render(" clear search"))
+		}
+		hs = append(hs, m.hint(config.Add, "add"), m.hint(config.Edit, "edit"), m.hint(config.Open, "open"),
+			m.hint(config.Done, "done"))
 		if it := m.selected(); it != nil && it.Open() {
 			hs = append(hs, m.hint(config.Reject, "reject"))
 		}
@@ -479,7 +487,7 @@ func (m *Model) hintsView() string {
 		} else {
 			hs = append(hs, m.st.key.Render(m.Keys.First(config.ItemUp)+"/"+m.Keys.First(config.ItemDown))+" "+m.st.muted.Render("reorder"))
 		}
-		hs = append(hs, m.hint(config.Help, "more"))
+		hs = append(hs, m.hint(config.Filter, "search"), m.hint(config.Help, "more"))
 	}
 	var b strings.Builder
 	b.WriteString(" ")

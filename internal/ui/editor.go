@@ -173,14 +173,26 @@ func (m *Model) submitEditor() tea.Cmd {
 	m.editor = nil
 	m.refresh()
 	var msgs []string
+	hidden := func() bool {
+		return tabOf(res.Item) == m.tab && m.filters[m.tab].active() && m.rowIndex(m.tab, res.Item.ID) < 0
+	}
 	if e.editID != "" {
 		msgs = append(msgs, "Saved "+quote(res.Item.Title))
+		if hidden() {
+			msgs = append(msgs, "hidden by the search")
+		}
 	} else {
 		t := tabOf(res.Item)
 		if t == m.tab {
-			m.cursor[t] = max(0, m.rowIndex(t, res.Item.ID))
-			m.ensureVisible(t)
+			// A new item the search hides leaves the cursor where it was.
+			if i := m.rowIndex(t, res.Item.ID); i >= 0 {
+				m.cursor[t] = i
+				m.ensureVisible(t)
+			}
 			msgs = append(msgs, "Added "+quote(res.Item.Title))
+			if hidden() {
+				msgs = append(msgs, "hidden by the search")
+			}
 		} else {
 			msgs = append(msgs, "Added "+quote(res.Item.Title)+" to "+t.label())
 		}

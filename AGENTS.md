@@ -231,8 +231,11 @@ Anything older than `backup_keep_days` (10) is pruned.
   change them together and run `TestMouse`.
 - Truncate plain text **before** styling (`seg` / `truncateSegs` /
   `renderRow`). Truncating styled strings can cut an OSC 8 hyperlink in half.
-- Filtering (`/`, the `filter` action) works in settings and help today and is
-  built to be reused by the main views. `filterState` is the prompt, which takes
+- Filtering (`/`, the `filter` action) works in settings, help and the four
+  list tabs. In the lists it is a per-tab search over titles (`Model.filters`,
+  applied in `refreshTab` via `filterRows`): matches show flat, with the parent's
+  title as context, and the cursor stays on its item. `Model.totals` holds the
+  unfiltered counts for the tab headers and "n of m". `filterState` is the prompt, which takes
   over the status line. `matchRow` (built on `fuzzy.MatchFields`) matches a row's
   fields. Key bindings must match whole, ignoring case, so `ctrl+x` finds a binding
   but `ctrl` doesn't. Short labels match fuzzily and sentences by word, because a
@@ -305,5 +308,5 @@ Anything older than `backup_keep_days` (10) is pruned.
   hangs directly off its note.
 - Optional hidden anchors in note bodies (`<!-- id -->`), if position and
   fuzzy matching turn out to be too weak in practice.
-- A search over History, and `/` filtering in the main views (reuse
-  `filterState` and `internal/fuzzy`; titles fuzzy, bodies by word).
+- Searching note bodies as well as titles (needs a way to show a body-only
+  match; see `filterRows`).

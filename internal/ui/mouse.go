@@ -18,6 +18,7 @@ func (m *Model) handleClick(ms tea.Mouse) tea.Cmd {
 		return nil
 	}
 	m.pendingMove = false
+	m.filters[m.tab].stop()
 	if ms.Y == 0 {
 		if t := m.tabAt(ms.X); t >= 0 {
 			m.switchTab(t)

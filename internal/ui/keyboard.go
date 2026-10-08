@@ -19,6 +19,8 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.confirmKey(msg)
 	case m.pendingMove:
 		return m.moveKey(msg)
+	case m.mode == modeList && m.filters[m.tab].editing:
+		return m.listFilterKey(msg)
 	case m.mode == modeSettings:
 		return m.settingsKey(msg)
 	case m.mode == modeHelp:
@@ -77,6 +79,7 @@ func (m *Model) globalKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 }
 
 func (m *Model) switchTab(t tab) {
+	m.filters[m.tab].stop()
 	m.tab = t
 	m.mode = modeList
 	m.ensureVisible(t)
@@ -116,6 +119,12 @@ func (m *Model) listKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.toggleSortDir()
 	case k(config.HistoryFilter) && m.tab == tabHistory:
 		return m.cycleHistoryFilter()
+	case k(config.Filter):
+		return m.startFilter(&m.filters[m.tab])
+	case msg.String() == "esc" && m.filters[m.tab].active():
+		m.filters[m.tab].clear()
+		m.refilterList()
+		return nil
 	case it == nil:
 		return nil
 	case k(config.Open):
@@ -136,6 +145,10 @@ func (m *Model) listKey(msg tea.KeyPressMsg) tea.Cmd {
 		return m.unassign(it)
 	case k(config.Move):
 		m.pendingMove = true
+	case m.filters[m.tab].query() != "" && (k(config.ItemUp) || k(config.ItemDown) || k(config.ItemTop) ||
+		k(config.ItemBottom) || k(config.Indent) || k(config.Outdent)):
+		// These act on an item's real siblings, most of which a search hides.
+		return m.warn("Clear the search (esc) to reorder or indent")
 	case k(config.ItemUp):
 		return m.reorder(it, todo.Up)
 	case k(config.ItemDown):

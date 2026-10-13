@@ -6,7 +6,12 @@ storage.
 
 ## Quick start
 
-Requires Go 1.27 or newer. Install directly with Go; no extra tools or source
+Download an archive for your platform from the
+[releases page](https://github.com/relloyd/todotil/releases), and put the
+`todotil` binary on your `PATH`. The binaries are not signed; if macOS stops
+one you downloaded with a browser, run `xattr -d com.apple.quarantine todotil`.
+
+Or, with Go 1.27 or newer, install directly with Go; no extra tools or source
 checkout are needed:
 
 ```sh

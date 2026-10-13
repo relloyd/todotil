@@ -447,7 +447,7 @@ func runHelp(c *ctx, args []string) error {
 	for _, cmd := range commands {
 		fmt.Fprintf(w, "  todotil %s\n", cmd.summary)
 	}
-	fmt.Fprintln(w, "\nGlobal flags go before the command: --home DIR (default ~/.config/todotil).")
+	fmt.Fprintln(w, "\nGlobal flags go before the command: --home DIR (default ~/.config/todotil).\nOn its own, --version prints the version and exits.")
 	fmt.Fprintln(w, "Run `todotil help agents` for the agent workflow and exit codes.")
 	return nil
 }

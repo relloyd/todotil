@@ -19,6 +19,9 @@ import (
 	"github.com/relloyd/todotil/internal/ui"
 )
 
+// version is set at release time with -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	os.Exit(run())
 }
@@ -30,10 +33,15 @@ func run() int {
 		return 1
 	}
 	home := flag.String("home", defHome, "app home directory (config, data and backups)")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Usage = func() {
 		cli.Run(cli.Env{Stdout: os.Stderr}, []string{"help"})
 	}
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("todotil", version)
+		return 0
+	}
 	paths := config.Paths{Home: *home}
 
 	if err := prepare(paths); err != nil {

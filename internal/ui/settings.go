@@ -120,6 +120,20 @@ func (m *Model) settingsItems() []setting {
 			},
 		},
 		{
+			label: "New items go to", desc: "Add new todos and notes at the top or the bottom of their list.",
+			value: func(m *Model) string {
+				if m.Settings.NewItemsAtTop {
+					return "top"
+				}
+				return "bottom"
+			},
+			change: func(m *Model, _ int) tea.Cmd {
+				m.Settings.NewItemsAtTop = !m.Settings.NewItemsAtTop
+				m.Service.AddAtTop = m.Settings.NewItemsAtTop
+				return save(m)
+			},
+		},
+		{
 			label: "Journal checklists go to", desc: "Where checkbox todos in a journal note land when added from History.",
 			value: func(m *Model) string { return m.Settings.JournalChildState },
 			change: func(m *Model, d int) tea.Cmd {

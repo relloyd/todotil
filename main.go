@@ -114,8 +114,10 @@ func runTUI(paths config.Paths) error {
 		board.Replay(e)
 	}
 
+	svc := todo.NewService(board, log, settings.UndoDepth)
+	svc.AddAtTop = settings.NewItemsAtTop
 	model := ui.New(ui.Deps{
-		Service:   todo.NewService(board, log, settings.UndoDepth),
+		Service:   svc,
 		Log:       log,
 		Paths:     paths,
 		Settings:  settings,

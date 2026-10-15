@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -118,6 +119,17 @@ func (c *ctx) open(actor string) error {
 		c.svc.Now = c.env.Now
 	}
 	return nil
+}
+
+// newItemsAtTop reports the user's "new items go to" setting, so agents add
+// items where the user expects them. A missing or unreadable config.toml
+// means the default; unlike the TUI, the CLI never creates the file.
+func (c *ctx) newItemsAtTop() bool {
+	if _, err := os.Stat(c.env.Paths.Settings()); err != nil {
+		return config.DefaultSettings().NewItemsAtTop
+	}
+	s, _ := config.LoadSettings(c.env.Paths)
+	return s.NewItemsAtTop
 }
 
 func (c *ctx) now() time.Time {

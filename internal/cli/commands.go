@@ -421,6 +421,7 @@ func runAdd(c *ctx, args []string) error {
 	if !st.Active() {
 		childState = todo.Now
 	}
+	c.svc.AddAtTop = c.newItemsAtTop()
 	res, err := c.svc.Add(text, st, parentID, childState)
 	if err != nil {
 		return err

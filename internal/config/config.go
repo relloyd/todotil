@@ -51,6 +51,7 @@ type Settings struct {
 	Mouse             bool    `toml:"mouse"`
 	Theme             string  `toml:"theme"`
 	JournalChildState string  `toml:"journal_child_state"`
+	NewItemsAtTop     bool    `toml:"new_items_at_top"`
 	BackupHour        int     `toml:"backup_hour"`
 	BackupKeepDays    int     `toml:"backup_keep_days"`
 	History           History `toml:"history"`

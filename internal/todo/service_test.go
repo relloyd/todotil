@@ -128,6 +128,25 @@ func TestAddAndViews(t *testing.T) {
 	assert.Equal(t, a.ID, c.Parent)
 }
 
+func TestAddAtTop(t *testing.T) {
+	s, _ := newTestService()
+	a := add(t, s, "alpha", Now)
+	addChild(t, s, a, "old child", Now)
+	add(t, s, "beta", Now)
+
+	s.AddAtTop = true
+	add(t, s, "gamma", Now)
+	addChild(t, s, a, "new child", Now)
+	add(t, s, "plan\n\n- [ ] one\n- [ ] two", Now)
+	assert.Equal(t, []string{"plan", "  one", "  two", "gamma", "alpha", "  new child", "  old child", "beta"},
+		titles(s.Board().ViewRows(Now)), "checkbox children keep their line order")
+
+	s.AddAtTop = false
+	add(t, s, "delta", Now)
+	rows := titles(s.Board().ViewRows(Now))
+	assert.Equal(t, "delta", rows[len(rows)-1])
+}
+
 func TestCheckboxExtractionOnAdd(t *testing.T) {
 	tests := []struct {
 		name      string

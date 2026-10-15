@@ -251,6 +251,15 @@ func (b *Board) MaxOrder() float64 {
 	return m
 }
 
+// MinOrder returns the smallest order value in use.
+func (b *Board) MinOrder() float64 {
+	var m float64
+	for _, it := range b.items {
+		m = min(m, it.Order)
+	}
+	return m
+}
+
 func (b *Board) put(it *Item) {
 	if old := b.items[it.ID]; old != nil && old.Parent != it.Parent {
 		b.unlinkChild(old.Parent, it.ID)

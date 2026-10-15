@@ -362,6 +362,30 @@ func TestHistorySortPersists(t *testing.T) {
 	assert.Contains(t, h.screen(), "Open and journal notes")
 }
 
+func TestNewItemsAtTopSetting(t *testing.T) {
+	h := newHarness(t)
+	h.add("first")
+	h.add("second")
+
+	h.keys(",")
+	for h.m.settings.current().label != "New items go to" {
+		h.keys("down")
+	}
+	assert.Contains(t, h.screen(), "bottom")
+	h.keys("enter")
+	assert.Contains(t, h.screen(), "top")
+	saved, err := config.LoadSettings(h.pathsTo)
+	require.NoError(t, err)
+	assert.True(t, saved.NewItemsAtTop)
+	h.keys("esc")
+
+	h.add("third")
+	assert.Equal(t, "third", h.selectedTitle(), "the cursor follows the new item")
+	assert.Equal(t, 0, h.m.cursor[tabNow])
+	s := h.screen()
+	assert.Less(t, strings.Index(s, "third"), strings.Index(s, "first"))
+}
+
 func TestSettingsPane(t *testing.T) {
 	h := newHarness(t)
 	h.keys(",")

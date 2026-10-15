@@ -368,12 +368,18 @@ func TestNewItemsAtTopSetting(t *testing.T) {
 	h.add("second")
 
 	h.keys(",")
-	for h.m.settings.current().label != "New items go to" {
+	for range len(h.m.settings.shown) {
+		if h.m.settings.current().label == "New items go to" {
+			break
+		}
 		h.keys("down")
 	}
-	assert.Contains(t, h.screen(), "bottom")
+	cur := h.m.settings.current()
+	require.Equal(t, "New items go to", cur.label)
+	assert.Equal(t, "bottom", cur.value(h.m))
 	h.keys("enter")
-	assert.Contains(t, h.screen(), "top")
+	assert.Equal(t, "top", cur.value(h.m))
+	assert.True(t, h.svc.AddAtTop)
 	saved, err := config.LoadSettings(h.pathsTo)
 	require.NoError(t, err)
 	assert.True(t, saved.NewItemsAtTop)

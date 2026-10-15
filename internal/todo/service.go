@@ -355,6 +355,9 @@ func (s *Service) Add(text string, state State, parent string, childState State)
 		t.put(it)
 		id = it.ID
 		sum = t.syncBody(it.ID, childState)
+		if s.AddAtTop {
+			t.raiseSourceKids(it.ID)
+		}
 		return nil
 	})
 	if err != nil {
@@ -750,6 +753,19 @@ func (t *tx) syncBody(id string, childState State) SyncSummary {
 		sum.Removed++
 	}
 	return sum
+}
+
+// raiseSourceKids moves id's checkbox children above every other item,
+// keeping their line order. A journal note's children show at the top level
+// of an active list, so without this they would land at its bottom.
+func (t *tx) raiseSourceKids(id string) {
+	kids := t.w.sourceKids(id)
+	base := t.firstOrder() - float64(len(kids))
+	for i, k := range kids {
+		kc := k.Clone()
+		kc.Order = base + float64(i)
+		t.put(kc)
+	}
 }
 
 // orderBetween picks an order for a new checkbox child at line i so that it

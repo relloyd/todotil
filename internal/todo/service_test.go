@@ -141,9 +141,14 @@ func TestAddAtTop(t *testing.T) {
 	assert.Equal(t, []string{"plan", "  one", "  two", "gamma", "alpha", "  new child", "  old child", "beta"},
 		titles(s.Board().ViewRows(Now)), "checkbox children keep their line order")
 
+	// A journal note's checkbox children show at the top level of Now.
+	add(t, s, "standup\n\n- [ ] call bob\n- [ ] email ann", Journal)
+	rows := titles(s.Board().ViewRows(Now))
+	assert.Equal(t, []string{"standup › call bob", "standup › email ann", "plan"}, rows[:3])
+
 	s.AddAtTop = false
 	add(t, s, "delta", Now)
-	rows := titles(s.Board().ViewRows(Now))
+	rows = titles(s.Board().ViewRows(Now))
 	assert.Equal(t, "delta", rows[len(rows)-1])
 }
 

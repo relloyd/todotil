@@ -4,7 +4,9 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -102,11 +104,19 @@ const settingsHeader = `# todotil settings. Edit in the app with "," or by hand 
 
 // LoadSettings reads config.toml, creating it with defaults if missing.
 func LoadSettings(p Paths) (Settings, error) {
-	s := DefaultSettings()
-	b, err := os.ReadFile(p.Settings())
-	if os.IsNotExist(err) {
+	s, err := ReadSettings(p)
+	if errors.Is(err, fs.ErrNotExist) {
 		return s, SaveSettings(p, s)
 	}
+	return s, err
+}
+
+// ReadSettings reads config.toml without ever writing it. A missing file
+// returns the defaults and an error matching fs.ErrNotExist; a file that
+// fails to parse returns the defaults and the parse error.
+func ReadSettings(p Paths) (Settings, error) {
+	s := DefaultSettings()
+	b, err := os.ReadFile(p.Settings())
 	if err != nil {
 		return s, err
 	}

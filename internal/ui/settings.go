@@ -120,7 +120,7 @@ func (m *Model) settingsItems() []setting {
 			},
 		},
 		{
-			label: "New items go to", desc: "Add new todos and notes at the top or the bottom of their list.",
+			label: "New items go to", desc: "Where items you add appear in Now, Next and Later. Moved items still go to the bottom.",
 			value: func(m *Model) string {
 				if m.Settings.NewItemsAtTop {
 					return "top"

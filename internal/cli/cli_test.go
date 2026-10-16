@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -249,6 +250,26 @@ func TestAddVariants(t *testing.T) {
 	r := f.run("add", "--as", "bot", "--json", "--", "--not-a-flag", "--json")
 	require.Equal(t, ExitOK, r.code, r.stderr)
 	assert.Equal(t, "--not-a-flag --json", r.json(t)["item"].(map[string]any)["title"])
+}
+
+func TestAddFollowsNewItemsAtTop(t *testing.T) {
+	f := newFixture(t)
+	f.addItems("first")
+	_, err := os.Stat(f.paths.Settings())
+	assert.True(t, os.IsNotExist(err), "the CLI doesn't create config.toml")
+
+	s := config.DefaultSettings()
+	s.NewItemsAtTop = true
+	require.NoError(t, config.SaveSettings(f.paths, s))
+	f.addItems("second")
+	assert.Equal(t, []string{"second", "first"}, listTitles(f.ok("list")))
+
+	// A broken config.toml falls back to the default with a warning.
+	require.NoError(t, os.WriteFile(f.paths.Settings(), []byte("new_items_at_top = ["), 0o600))
+	r := f.run("add", "third", "--as", "setup", "--json")
+	require.Equal(t, ExitOK, r.code, r.stderr)
+	assert.Contains(t, r.stderr, "warning")
+	assert.Equal(t, []string{"second", "first", "third"}, listTitles(f.ok("list")))
 }
 
 func TestTextOutput(t *testing.T) {

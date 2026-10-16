@@ -79,6 +79,9 @@ so a finished item keeps a record of where its work landed.
 **Add**
 - `add` creates an item in Now unless you pass `--list`. The one exception:
   under a parent that is open in an active list, it defaults to that list.
+- New items go to the bottom of their list, or to the top if the user set
+  "New items go to: top". At the top, your item becomes position 1 and the
+  next pick for `claim next`, and every other position shifts down by one.
 - `--list journal` records a journal note.
 - The text can be `-` to read it from stdin.
 - `--parent` or `--under` makes it a child. `--under` takes a claim ID and uses

@@ -109,6 +109,9 @@ type Service struct {
 	NewClaim  func(time.Time) string
 	// Actor names who is making changes: an agent name, or "" for the user.
 	Actor string
+	// AddAtTop makes Add place new items above their siblings instead of
+	// below them.
+	AddAtTop bool
 }
 
 // NewService wraps a board replayed from log.
@@ -168,6 +171,9 @@ func (t *tx) del(id string) {
 }
 
 func (t *tx) nextOrder() float64 { return t.w.MaxOrder() + 1 }
+
+// firstOrder returns an order that sorts before every existing item.
+func (t *tx) firstOrder() float64 { return t.w.MinOrder() - 1 }
 
 // run applies fn as one transaction against the latest state. If another
 // process changes a touched item between computing and writing, fn is run
@@ -319,8 +325,9 @@ func (s *Service) SetLinkTitle(url, title string) error {
 	return nil
 }
 
-// Add creates an entry from text. childState is used for checkbox children
-// when state is Journal.
+// Add creates an entry from text, below its siblings or, with AddAtTop,
+// above them. childState is used for checkbox children when state is
+// Journal.
 func (s *Service) Add(text string, state State, parent string, childState State) (Result, error) {
 	title, body := SplitText(text)
 	if title == "" {
@@ -342,9 +349,15 @@ func (s *Service) Add(text string, state State, parent string, childState State)
 		if t.w.Get(parent) == nil {
 			it.Parent = ""
 		}
+		if s.AddAtTop {
+			it.Order = t.firstOrder()
+		}
 		t.put(it)
 		id = it.ID
 		sum = t.syncBody(it.ID, childState)
+		if s.AddAtTop {
+			t.raiseSourceKids(it.ID)
+		}
 		return nil
 	})
 	if err != nil {
@@ -740,6 +753,19 @@ func (t *tx) syncBody(id string, childState State) SyncSummary {
 		sum.Removed++
 	}
 	return sum
+}
+
+// raiseSourceKids moves id's checkbox children above every other item,
+// keeping their line order. A journal note's children show at the top level
+// of an active list, so without this they would land at its bottom.
+func (t *tx) raiseSourceKids(id string) {
+	kids := t.w.sourceKids(id)
+	base := t.firstOrder() - float64(len(kids))
+	for i, k := range kids {
+		kc := k.Clone()
+		kc.Order = base + float64(i)
+		t.put(kc)
+	}
 }
 
 // orderBetween picks an order for a new checkbox child at line i so that it

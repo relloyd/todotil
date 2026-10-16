@@ -38,6 +38,8 @@ lists. You can take items from it, report progress and mark them done with the
    - The first line is the title. After a blank line comes the body, where
      ` + "`- [ ] step`" + ` lines become child todos.
    - Items go to Now unless you pass ` + "`--list next|later`" + `.
+   - The user's settings decide whether a new item goes to the bottom of the list
+     or the top. At the top it becomes the next ` + "`claim next`" + ` pick.
    - ` + "`--under`" + ` makes the new item a child of your claimed item.
 
 ### Exit codes

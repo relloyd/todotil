@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"slices"
 	"strings"
 	"time"
@@ -118,6 +119,18 @@ func (c *ctx) open(actor string) error {
 		c.svc.Now = c.env.Now
 	}
 	return nil
+}
+
+// newItemsAtTop reports the user's "new items go to" setting, so agents add
+// items where the user expects them. A missing config.toml means the
+// default; unlike the TUI, the CLI never creates the file. An unreadable
+// one also means the default, with a warning on stderr.
+func (c *ctx) newItemsAtTop() bool {
+	s, err := config.ReadSettings(c.env.Paths)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		fmt.Fprintf(c.env.Stderr, "todotil: warning: %v; using default settings\n", err)
+	}
+	return s.NewItemsAtTop
 }
 
 func (c *ctx) now() time.Time {

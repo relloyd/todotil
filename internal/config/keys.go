@@ -126,10 +126,10 @@ var Actions = []ActionInfo{
 	{Copy, GroupList, "Copy item (and children) to the clipboard", []string{"y"}},
 	{CopyID, GroupList, "Copy the selected item's ID to the clipboard", []string{"ctrl+y"}},
 	{Unassign, GroupList, "Unassign: end an agent's claim", []string{"U"}},
-	{ItemUp, GroupList, "Move item up", []string{"shift+up", "alt+k"}},
-	{ItemDown, GroupList, "Move item down", []string{"shift+down", "alt+j"}},
-	{ItemTop, GroupList, "Send item to top", []string{"K"}},
-	{ItemBottom, GroupList, "Send item to bottom", []string{"J"}},
+	{ItemUp, GroupList, "Move item up", []string{"K", "shift+up", "alt+k"}},
+	{ItemDown, GroupList, "Move item down", []string{"J", "shift+down", "alt+j"}},
+	{ItemTop, GroupList, "Send item to top", []string{"ctrl+k"}},
+	{ItemBottom, GroupList, "Send item to bottom", []string{"ctrl+j"}},
 	{Indent, GroupList, "Indent under the item above", []string{">"}},
 	{Outdent, GroupList, "Outdent one level", []string{"<"}},
 	{SortKey, GroupList, "History: toggle created/completed/rejected sort", []string{"s"}},
@@ -218,6 +218,14 @@ func LoadKeys(p Paths) (KeyMap, error) {
 		slices.Equal(file.Keys[string(Newline)], []string{"shift+enter", "alt+enter", "ctrl+j"}) {
 		file.Keys[string(Submit)] = Info(Submit).Default
 		file.Keys[string(Newline)] = Info(Newline).Default
+	}
+	if slices.Equal(file.Keys[string(ItemUp)], []string{"shift+up", "alt+k"}) &&
+		slices.Equal(file.Keys[string(ItemDown)], []string{"shift+down", "alt+j"}) &&
+		slices.Equal(file.Keys[string(ItemTop)], []string{"K"}) &&
+		slices.Equal(file.Keys[string(ItemBottom)], []string{"J"}) {
+		for _, action := range []Action{ItemUp, ItemDown, ItemTop, ItemBottom} {
+			file.Keys[string(action)] = Info(action).Default
+		}
 	}
 	for name, keys := range file.Keys {
 		if _, ok := km[Action(name)]; ok {

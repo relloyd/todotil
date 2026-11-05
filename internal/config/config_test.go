@@ -85,7 +85,10 @@ func TestKeysMergeOverDefaults(t *testing.T) {
 		{Quit, "Q", true},
 		{Quit, "q", false},
 		{Down, "j", true},
-		{ItemTop, "K", true},
+		{ItemUp, "K", true},
+		{ItemDown, "J", true},
+		{ItemTop, "ctrl+k", true},
+		{ItemBottom, "ctrl+j", true},
 		{MoveNext, "x", true},
 		{EntryJrnl, "alt+j", true},
 	}
@@ -94,6 +97,43 @@ func TestKeysMergeOverDefaults(t *testing.T) {
 	}
 	_, ok := km["bogus"]
 	assert.False(t, ok)
+}
+
+func TestOldDefaultReorderKeysUpgradeWithoutChangingCustomBindings(t *testing.T) {
+	tests := []struct {
+		name string
+		keys string
+		want KeyMap
+	}{
+		{
+			name: "old defaults",
+			keys: "item_up = [\"shift+up\", \"alt+k\"]\nitem_down = [\"shift+down\", \"alt+j\"]\n" +
+				"item_top = [\"K\"]\nitem_bottom = [\"J\"]\n",
+			want: DefaultKeyMap(),
+		},
+		{
+			name: "custom top key",
+			keys: "item_up = [\"shift+up\", \"alt+k\"]\nitem_down = [\"shift+down\", \"alt+j\"]\n" +
+				"item_top = [\"ctrl+t\"]\nitem_bottom = [\"J\"]\n",
+			want: KeyMap{
+				ItemUp:     {"shift+up", "alt+k"},
+				ItemDown:   {"shift+down", "alt+j"},
+				ItemTop:    {"ctrl+t"},
+				ItemBottom: {"J"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Paths{Home: t.TempDir()}
+			require.NoError(t, os.WriteFile(p.Keys(), []byte("[keys]\n"+tt.keys), 0o600))
+			got, err := LoadKeys(p)
+			require.NoError(t, err)
+			for _, action := range []Action{ItemUp, ItemDown, ItemTop, ItemBottom} {
+				assert.Equal(t, tt.want[action], got[action], action)
+			}
+		})
+	}
 }
 
 func TestOldDefaultEditorKeysUpgradeWithoutChangingCustomBindings(t *testing.T) {

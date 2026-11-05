@@ -391,12 +391,16 @@ func TestReorderAndIndent(t *testing.T) {
 		h.add(s)
 	}
 	h.keys("G", "K")
+	assert.Equal(t, []string{"a", "c", "b"}, h.viewTitles(tabNow))
+	h.keys("ctrl+k")
 	assert.Equal(t, []string{"c", "a", "b"}, h.viewTitles(tabNow))
 	h.keys("shift+down")
 	assert.Equal(t, []string{"a", "c", "b"}, h.viewTitles(tabNow))
 	h.keys("alt+k")
 	assert.Equal(t, []string{"c", "a", "b"}, h.viewTitles(tabNow))
 	h.keys("J")
+	assert.Equal(t, []string{"a", "c", "b"}, h.viewTitles(tabNow))
+	h.keys("ctrl+j")
 	assert.Equal(t, []string{"a", "b", "c"}, h.viewTitles(tabNow))
 	assert.Equal(t, "c", h.selectedTitle())
 

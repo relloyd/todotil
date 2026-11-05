@@ -48,7 +48,8 @@ data in `~/.config/todotil`; override this with `--home` or `TODOTIL_HOME`.
   Unfinished new-item text is saved in the app home and restored when you next add an item;
   `ctrl+k` clears it, `ctrl+z` undoes a clear while the dialog remains open.
 - **Work:** `x` done/reopen · `ctrl+x` reject · `m` then `n`/`x`/`l`/`j` to move · `e` edit · `enter` details
-  · `>`/`<` indent/outdent · `shift+↑/↓` or `alt+k/j` reorder · `K`/`J` top/bottom
+  · `>`/`<` indent/outdent · `K`/`J` (or `shift+↑/↓`, `alt+k/j`) move up/down
+  · `ctrl+k`/`ctrl+j` send to top/bottom
   · `u` undo · `U` unassign an agent.
 - **Navigate:** `j`/`k`, `g`/`G`, `p` parent, `c` first child, `ctrl+o` back.
 - **History:** `f` cycles All / Completed / Rejected / Journal; `s` switches between

@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -25,6 +27,7 @@ type editorState struct {
 	base      *todo.Item
 	conflict  string
 	overwrite bool
+	cleared   string // text recoverable with ctrl+z until the dialog closes
 }
 
 func (m *Model) newTextarea() textarea.Model {
@@ -83,11 +86,56 @@ func (m *Model) openAdd(parentID, initial string) tea.Cmd {
 	}
 	m.editor = &editorState{ta: m.newTextarea(), state: st, parentID: parentID}
 	m.layoutEditor()
+	b, err := os.ReadFile(m.Paths.Draft())
+	if err != nil && !os.IsNotExist(err) {
+		return tea.Batch(m.editor.ta.Focus(), m.fail(fmt.Errorf("%s: %w", m.Paths.Draft(), err)))
+	}
+	text := string(b)
 	if initial != "" {
-		m.editor.ta.InsertString(initial)
+		if text != "" {
+			text += "\n"
+		}
+		text += initial
+	}
+	m.editor.ta.SetValue(text)
+	if initial != "" {
+		if err := m.persistDraft(m.editor.ta.Value()); err != nil {
+			return tea.Batch(m.editor.ta.Focus(), m.fail(err))
+		}
 	}
 	m.pendingMove, m.confirm = false, nil
 	return m.editor.ta.Focus()
+}
+
+func (m *Model) persistDraft(text string) error {
+	path := m.Paths.Draft()
+	if text == "" {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		return nil
+	}
+	if err := config.WriteFileAtomic(path, []byte(text)); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	return nil
+}
+
+func (m *Model) updateEditorText(msg tea.Msg) tea.Cmd {
+	e := m.editor
+	before := e.ta.Value()
+	var cmd tea.Cmd
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "tab" {
+		e.ta.InsertString("    ")
+	} else {
+		e.ta, cmd = e.ta.Update(msg)
+	}
+	if e.editID == "" && e.ta.Value() != before {
+		if err := m.persistDraft(e.ta.Value()); err != nil {
+			return tea.Batch(cmd, m.fail(err))
+		}
+	}
+	return cmd
 }
 
 func (m *Model) openEdit(id string) tea.Cmd {
@@ -123,21 +171,43 @@ func (m *Model) editorKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	switch {
 	case k(config.Cancel), msg.String() == "ctrl+c":
+		if e.editID == "" {
+			if err := m.persistDraft(e.ta.Value()); err != nil {
+				return m.fail(err)
+			}
+		}
 		m.editor = nil
 		return nil
 	case k(config.Submit):
 		return m.submitEditor()
+	case e.editID == "" && k(config.ClearDraft):
+		if e.ta.Value() == "" {
+			return nil
+		}
+		e.cleared = e.ta.Value()
+		if err := m.persistDraft(""); err != nil {
+			return m.fail(err)
+		}
+		e.ta.SetValue("")
+		return nil
+	case e.editID == "" && msg.String() == "ctrl+z" && e.cleared != "":
+		text := e.cleared
+		if current := e.ta.Value(); current != "" {
+			text += "\n" + current
+		}
+		e.ta.SetValue(text)
+		e.cleared = ""
+		if err := m.persistDraft(e.ta.Value()); err != nil {
+			return m.fail(err)
+		}
+		return nil
 	}
-	var cmd tea.Cmd
-	e.ta, cmd = e.ta.Update(msg)
-	return cmd
+	return m.updateEditorText(msg)
 }
 
 func (m *Model) handlePaste(msg tea.PasteMsg) tea.Cmd {
 	if m.editor != nil {
-		var cmd tea.Cmd
-		m.editor.ta, cmd = m.editor.ta.Update(msg)
-		return cmd
+		return m.updateEditorText(msg)
 	}
 	if f := m.currentFilter(); f != nil && f.editing {
 		return m.filterInput(f, msg)
@@ -170,6 +240,10 @@ func (m *Model) submitEditor() tea.Cmd {
 	if err != nil {
 		return m.fail(err)
 	}
+	var draftErr error
+	if e.editID == "" {
+		draftErr = m.persistDraft("")
+	}
 	m.editor = nil
 	m.refresh()
 	var msgs []string
@@ -201,6 +275,9 @@ func (m *Model) submitEditor() tea.Cmd {
 		msgs = append(msgs, s)
 	}
 	text = strings.Join(msgs, " · ")
+	if draftErr != nil {
+		return m.warn(text + " · Draft could not be cleared: " + draftErr.Error())
+	}
 	if res.Sync.Bulk() {
 		return m.warn(text + m.undoHint())
 	}
@@ -279,6 +356,7 @@ func (m *Model) editorView() string {
 	if e.editID == "" {
 		hints = append(hints, keys(config.EntryNow)+"/"+strings.TrimPrefix(keys(config.EntryNext), "alt+")+"/"+
 			strings.TrimPrefix(keys(config.EntryLater), "alt+")+"/"+strings.TrimPrefix(keys(config.EntryJrnl), "alt+")+" classify")
+		hints = append(hints, keys(config.ClearDraft)+" clear", "ctrl+z undo clear")
 	}
 	hints = append(hints, keys(config.Cancel)+" cancel")
 	hint := m.st.muted.Background(m.st.dialogBg).Width(inner).Render(strings.Join(hints, " · "))

@@ -220,7 +220,7 @@ func TestSearchHiddenAddKeepsCursorAndEditNotes(t *testing.T) {
 	require.NotNil(t, h.m.editor)
 	h.keys("ctrl+a", "ctrl+k")
 	h.typeText("something else")
-	h.keys("enter")
+	h.keys("ctrl+s")
 	assert.Contains(t, h.screen(), "Saved")
 	assert.Contains(t, h.screen(), "hidden by the search")
 }

@@ -44,7 +44,9 @@ data in `~/.config/todotil`; override this with `--home` or `TODOTIL_HOME`.
 - **Add:** `a` opens the dialog. The first line is the title, then a blank line and an optional body.
   Lines like `- [ ] call Sam` become child todos. `[x]` marks one done and `[-]` rejected. The entry goes to the view you
   are in. Use `alt+n` / `alt+x` / `alt+l` / `alt+j` to send it to Now / Next / Later / Journal
-  instead. `enter` saves, `shift+enter` or `ctrl+j` adds a new line.
+  instead. `enter` adds a new line, `tab` indents, and `ctrl+s` saves (also when editing).
+  Unfinished new-item text is saved in the app home and restored when you next add an item;
+  `ctrl+k` clears it, `ctrl+z` undoes a clear while the dialog remains open.
 - **Work:** `x` done/reopen · `ctrl+x` reject · `m` then `n`/`x`/`l`/`j` to move · `e` edit · `enter` details
   · `>`/`<` indent/outdent · `shift+↑/↓` or `alt+k/j` reorder · `K`/`J` top/bottom
   · `u` undo · `U` unassign an agent.

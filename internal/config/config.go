@@ -33,6 +33,7 @@ func DefaultHome() (string, error) {
 func (p Paths) Settings() string { return filepath.Join(p.Home, "config.toml") }
 func (p Paths) Keys() string     { return filepath.Join(p.Home, "keys.toml") }
 func (p Paths) Theme() string    { return filepath.Join(p.Home, "theme.toml") }
+func (p Paths) Draft() string    { return filepath.Join(p.Home, "new-item-draft.txt") }
 func (p Paths) Data() string     { return filepath.Join(p.Home, "data") }
 func (p Paths) Backups() string  { return filepath.Join(p.Home, "backups") }
 

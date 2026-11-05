@@ -70,6 +70,7 @@ const (
 	EntryJrnl     Action = "entry_journal"
 	Submit        Action = "submit"
 	Newline       Action = "newline"
+	ClearDraft    Action = "clear_draft"
 	Cancel        Action = "cancel"
 )
 
@@ -145,8 +146,9 @@ var Actions = []ActionInfo{
 	{EntryNext, GroupEntry, "Classify as Next", []string{"alt+x"}},
 	{EntryLater, GroupEntry, "Classify as Later", []string{"alt+l"}},
 	{EntryJrnl, GroupEntry, "Classify as Journal", []string{"alt+j"}},
-	{Submit, GroupEntry, "Save the entry", []string{"enter", "ctrl+s"}},
-	{Newline, GroupEntry, "Insert a new line", []string{"shift+enter", "alt+enter", "ctrl+j"}},
+	{Submit, GroupEntry, "Save the entry", []string{"ctrl+s"}},
+	{Newline, GroupEntry, "Insert a new line", []string{"enter", "shift+enter", "alt+enter", "ctrl+j"}},
+	{ClearDraft, GroupEntry, "Clear a new entry (undo while open)", []string{"ctrl+k"}},
 	{Cancel, GroupEntry, "Cancel", []string{"esc"}},
 }
 
@@ -209,6 +211,13 @@ func LoadKeys(p Paths) (KeyMap, error) {
 	}
 	if _, err := toml.Decode(string(b), &file); err != nil {
 		return km, fmt.Errorf("%s: %w", p.Keys(), err)
+	}
+	// Older keys.toml files contain every default; upgrade that exact pair
+	// without changing either binding when the user has customised it.
+	if slices.Equal(file.Keys[string(Submit)], []string{"enter", "ctrl+s"}) &&
+		slices.Equal(file.Keys[string(Newline)], []string{"shift+enter", "alt+enter", "ctrl+j"}) {
+		file.Keys[string(Submit)] = Info(Submit).Default
+		file.Keys[string(Newline)] = Info(Newline).Default
 	}
 	for name, keys := range file.Keys {
 		if _, ok := km[Action(name)]; ok {

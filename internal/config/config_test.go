@@ -96,6 +96,45 @@ func TestKeysMergeOverDefaults(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestOldDefaultEditorKeysUpgradeWithoutChangingCustomBindings(t *testing.T) {
+	tests := []struct {
+		name    string
+		keys    string
+		submit  []string
+		newline []string
+	}{
+		{
+			name:    "old defaults",
+			keys:    "submit = [\"enter\", \"ctrl+s\"]\nnewline = [\"shift+enter\", \"alt+enter\", \"ctrl+j\"]\n",
+			submit:  []string{"ctrl+s"},
+			newline: []string{"enter", "shift+enter", "alt+enter", "ctrl+j"},
+		},
+		{
+			name:    "custom save key",
+			keys:    "submit = [\"alt+s\"]\nnewline = [\"shift+enter\", \"alt+enter\", \"ctrl+j\"]\n",
+			submit:  []string{"alt+s"},
+			newline: []string{"shift+enter", "alt+enter", "ctrl+j"},
+		},
+		{
+			name:    "custom newline key",
+			keys:    "submit = [\"enter\", \"ctrl+s\"]\nnewline = [\"ctrl+enter\"]\n",
+			submit:  []string{"enter", "ctrl+s"},
+			newline: []string{"ctrl+enter"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Paths{Home: t.TempDir()}
+			require.NoError(t, os.WriteFile(p.Keys(), []byte("[keys]\n"+tt.keys), 0o600))
+			got, err := LoadKeys(p)
+			require.NoError(t, err)
+			assert.Equal(t, tt.submit, got[Submit])
+			assert.Equal(t, tt.newline, got[Newline])
+			assert.Equal(t, []string{"ctrl+k"}, got[ClearDraft])
+		})
+	}
+}
+
 func TestTheme(t *testing.T) {
 	p := Paths{Home: t.TempDir()}
 	pal, err := LoadTheme(p, "dawn")

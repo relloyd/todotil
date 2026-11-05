@@ -129,7 +129,7 @@ func (h *harness) add(text string, extra ...string) {
 	require.NotNil(h.t, h.m.editor)
 	h.typeText(text)
 	h.keys(extra...)
-	h.keys("enter")
+	h.keys("ctrl+s")
 	require.Nil(h.t, h.m.editor, "dialog should close")
 }
 
@@ -187,6 +187,107 @@ func TestDialogShowsClassificationBadge(t *testing.T) {
 	h.keys("esc")
 	assert.Nil(t, h.m.editor)
 	assert.Zero(t, h.svc.Board().Len())
+}
+
+func TestNewItemDraftSurvivesCancelAndRestart(t *testing.T) {
+	h := newHarness(t)
+	h.add("parent")
+	h.keys("2", "a")
+	h.typeText("A long title\n\nNotes and context")
+	draft, err := os.ReadFile(h.pathsTo.Draft())
+	require.NoError(t, err)
+	assert.Equal(t, "A long title\n\nNotes and context", string(draft))
+	info, err := os.Stat(h.pathsTo.Draft())
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+
+	h.keys("esc")
+	h.m = New(h.m.Deps)
+	h.send(tea.WindowSizeMsg{Width: 100, Height: 30})
+	h.keys("1", "A")
+	require.NotNil(t, h.m.editor)
+	assert.Equal(t, "A long title\n\nNotes and context", h.m.editor.ta.Value())
+	assert.Equal(t, todo.Now, h.m.editor.state)
+	assert.Equal(t, h.m.selected().ID, h.m.editor.parentID)
+	h.keys("ctrl+s")
+	require.Nil(t, h.m.editor)
+	assert.NoFileExists(t, h.pathsTo.Draft())
+	require.Equal(t, "A long title", h.m.selected().Title)
+	assert.Equal(t, "Notes and context", h.m.selected().Body)
+	h.keys("a")
+	assert.Empty(t, h.m.editor.ta.Value())
+}
+
+func TestClearNewItemDraftCanBeUndoneUntilClosed(t *testing.T) {
+	h := newHarness(t)
+	h.keys("a")
+	h.send(tea.PasteMsg{Content: "Draft\n\nPasted notes"})
+	h.keys("ctrl+k")
+	assert.Empty(t, h.m.editor.ta.Value())
+	assert.NoFileExists(t, h.pathsTo.Draft())
+
+	h.keys("ctrl+z")
+	assert.Equal(t, "Draft\n\nPasted notes", h.m.editor.ta.Value())
+	b, err := os.ReadFile(h.pathsTo.Draft())
+	require.NoError(t, err)
+	assert.Equal(t, "Draft\n\nPasted notes", string(b))
+
+	h.keys("ctrl+k", "esc", "a")
+	assert.Empty(t, h.m.editor.ta.Value())
+	assert.NoFileExists(t, h.pathsTo.Draft())
+
+	h.typeText("Original")
+	h.keys("ctrl+k")
+	h.typeText("New text")
+	h.keys("ctrl+z")
+	assert.Equal(t, "Original\nNew text", h.m.editor.ta.Value())
+}
+
+func TestPasteOpensAddWithoutReplacingSavedDraft(t *testing.T) {
+	h := newHarness(t)
+	h.keys("a")
+	h.typeText("Unsaved notes")
+	h.keys("esc")
+	h.send(tea.PasteMsg{Content: "Additional notes"})
+	require.NotNil(t, h.m.editor)
+	assert.Equal(t, "Unsaved notes\nAdditional notes", h.m.editor.ta.Value())
+	b, err := os.ReadFile(h.pathsTo.Draft())
+	require.NoError(t, err)
+	assert.Equal(t, h.m.editor.ta.Value(), string(b))
+}
+
+func TestEditorEnterInsertsNewlineAndCtrlSSaves(t *testing.T) {
+	h := newHarness(t)
+	h.keys("a")
+	h.typeText("Title")
+	h.keys("enter")
+	require.NotNil(t, h.m.editor)
+	h.typeText("body")
+	h.keys("tab")
+	h.typeText("indented")
+	assert.Equal(t, "Title\nbody    indented", h.m.editor.ta.Value())
+	h.keys("ctrl+s")
+	require.Nil(t, h.m.editor)
+	assert.NoFileExists(t, h.pathsTo.Draft())
+
+	h.keys("e", "enter")
+	require.NotNil(t, h.m.editor, "enter also inserts a newline when editing")
+	assert.Contains(t, h.m.editor.ta.Value(), "\n")
+	h.keys("esc")
+	assert.NoFileExists(t, h.pathsTo.Draft(), "editing existing items does not create a draft")
+}
+
+func TestDraftWriteFailureKeepsEditorOpenOnCancel(t *testing.T) {
+	h := newHarness(t)
+	home := h.pathsTo.Home + "/not-a-directory"
+	require.NoError(t, os.WriteFile(home, []byte("occupied"), 0o600))
+	h.m.Paths.Home = home
+	h.keys("a")
+	h.typeText("Keep this")
+	h.keys("esc")
+	require.NotNil(t, h.m.editor)
+	assert.Equal(t, "Keep this", h.m.editor.ta.Value())
+	assert.Equal(t, statusError, h.m.statusKind)
 }
 
 func TestTitleBodyAndCheckboxes(t *testing.T) {
@@ -428,7 +529,7 @@ func TestCopyAndDelete(t *testing.T) {
 	h.add("note\n\nbody\n- [ ] boxed")
 	h.keys("g", "A")
 	h.typeText("extra child")
-	h.keys("enter")
+	h.keys("ctrl+s")
 	h.keys("g", "y")
 	assert.Equal(t, "note\n\nbody\n- [ ] boxed\n\n- [ ] extra child", h.copied)
 
@@ -491,7 +592,7 @@ func TestCopyChildItemID(t *testing.T) {
 	h.add("parent")
 	h.keys("A")
 	h.typeText("child")
-	h.keys("enter")
+	h.keys("ctrl+s")
 	it := h.m.selected()
 	require.NotNil(t, it)
 	assert.Equal(t, "child", it.Title)
@@ -763,11 +864,11 @@ func TestEditConflictWarnsBeforeOverwriting(t *testing.T) {
 	_, err = agent.Finish(res.Claim.ID, false, "")
 	require.NoError(t, err)
 
-	h.keys("enter")
+	h.keys("ctrl+s")
 	require.NotNil(t, h.m.editor, "first save is held back")
 	assert.Contains(t, h.screen(), "bot changed this text since you opened it")
 
-	h.keys("enter")
+	h.keys("ctrl+s")
 	assert.Nil(t, h.m.editor, "second save overwrites")
 }
 

@@ -144,7 +144,7 @@ func TestCopyMarksRejectedChildren(t *testing.T) {
 	// A child added directly, not from a checkbox line.
 	h.keys("g", "A")
 	h.typeText("extra")
-	h.keys("enter")
+	h.keys("ctrl+s")
 	extra := h.m.selected()
 	require.Equal(t, "extra", extra.Title)
 	h.keys("ctrl+x")

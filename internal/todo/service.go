@@ -292,7 +292,10 @@ func (s *Service) Undo() (string, error) {
 			if m.Before == nil {
 				t.del(m.After.ID)
 			} else {
-				t.put(m.Before.Clone())
+				// Restore the snapshot itself, not a clone: the record
+				// below this one holds this pointer as its After, and its
+				// conflict check relies on that identity.
+				t.put(m.Before)
 			}
 		}
 		return nil

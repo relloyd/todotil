@@ -141,7 +141,11 @@ write wins. Rules:
 - The reader skips unparsable lines (a torn write after a crash). Before
   appending, a missing final newline is written first.
 - New files start once the current one would pass `MaxSize` (10MB).
-- The live data files are never truncated or rewritten. Only `backups/` is pruned.
+- The live data files are never rewritten. The one truncation: when an append
+  fails, `Log.append` cuts the file back to where the append started, while still
+  holding the lock, so no process replays half a transaction. If that cut fails
+  too, the writer leaves its offset where it was and replays the surviving lines
+  like everyone else. Only `backups/` is pruned.
 
 **IDs.**
 - New item IDs are 16 random hex characters.
@@ -321,6 +325,9 @@ the operating systems to read it for; keep them in step with `goos`.
 
 ## Ideas not yet built
 
+- Crash-safe transactions. A crash in the middle of a multi-event append still
+  leaves its complete lines for readers to replay. Fixing that would need a
+  transaction marker in the log, and so a format bump.
 - Redo, and an undo stack that persists across restarts (the event log already
   has `tx` ids to support it).
 - Claim leases/heartbeats, if abandoned claims become a nuisance. Today they

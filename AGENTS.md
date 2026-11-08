@@ -12,12 +12,13 @@ is about developing todotil itself.
 ```sh
 task            # fmt, vet, lint, test (race), build → ./bin/todotil
 task run        # run against ./tmp/home, never your real data
-task ci         # like `task check` but fails on unformatted code
+task ci         # what CI runs: gofmt check, vet, go.mod tidiness, govulncheck, tests (race)
+task lint       # golangci-lint (CI runs it separately from task ci)
 task install    # full check, then `go install` into $GOBIN / $GOPATH/bin
 ```
 
 Run `task --list` for everything. Before calling any change done, `task ci`
-must pass. Don't skip lint or the race detector.
+and `task lint` must pass. Don't skip lint or the race detector.
 
 ## Toolchain
 

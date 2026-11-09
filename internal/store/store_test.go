@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -92,6 +93,69 @@ func TestLogTolerateTornWrite(t *testing.T) {
 	assert.Equal(t, 1, res.Skipped)
 	require.Len(t, res.Events, 2)
 	assert.Equal(t, "b", res.Events[1].Item.ID)
+}
+
+// failAfterFirstLine writes only the first line of a batch, as a disk
+// filling up mid-write might, then reports the error. Ending on a line
+// boundary is the worst case: no torn line marks the batch as incomplete.
+func failAfterFirstLine(f *os.File, b []byte) error {
+	n := bytes.IndexByte(b, '\n') + 1
+	if _, err := f.Write(b[:n]); err != nil {
+		return err
+	}
+	return errors.New("disk full")
+}
+
+func TestFailedAppendWritesNothing(t *testing.T) {
+	dir := t.TempDir()
+	a, _, err := Open(dir)
+	require.NoError(t, err)
+	b, _, err := Open(dir)
+	require.NoError(t, err)
+	require.NoError(t, a.Append([]todo.Event{put("first")}))
+	_, err = b.Poll()
+	require.NoError(t, err)
+
+	a.write = failAfterFirstLine
+	require.ErrorContains(t, a.Append([]todo.Event{put("half-1"), put("half-2")}), "disk full")
+
+	evs, err := b.Poll()
+	require.NoError(t, err)
+	assert.Empty(t, evs, "another process sees none of the failed batch")
+	_, res, err := Open(dir)
+	require.NoError(t, err)
+	require.Len(t, res.Events, 1, "nor does a restart")
+	assert.Zero(t, res.Skipped)
+
+	a.write = writeSync
+	require.NoError(t, a.Append([]todo.Event{put("after")}))
+	evs, err = b.Poll()
+	require.NoError(t, err)
+	require.Len(t, evs, 1)
+	assert.Equal(t, "after", evs[0].Item.ID)
+}
+
+func TestFailedRollbackReplaysSurvivingLines(t *testing.T) {
+	dir := t.TempDir()
+	a, _, err := Open(dir)
+	require.NoError(t, err)
+	require.NoError(t, a.Append([]todo.Event{put("first")}))
+
+	// Closing the file makes the rollback's Truncate fail too.
+	a.write = func(f *os.File, b []byte) error {
+		err := failAfterFirstLine(f, b)
+		_ = f.Close()
+		return err
+	}
+	err = a.Append([]todo.Event{put("half-1"), put("half-2")})
+	require.ErrorContains(t, err, "disk full")
+	require.ErrorContains(t, err, "removing partial write")
+
+	// The writer reads back what survived, so it agrees with other processes.
+	evs, err := a.Poll()
+	require.NoError(t, err)
+	require.Len(t, evs, 1)
+	assert.Equal(t, "half-1", evs[0].Item.ID)
 }
 
 func TestLogRejectsNewerFormat(t *testing.T) {

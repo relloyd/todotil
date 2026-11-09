@@ -50,6 +50,10 @@ type Log struct {
 	seq  int   // newest file read so far (0 if none)
 	off  int64 // bytes of that file consumed
 	ver  int   // header version of that file
+
+	// write appends b to f and makes it durable. Tests replace it to
+	// simulate a short write.
+	write func(f *os.File, b []byte) error
 }
 
 // LoadResult carries what was read when opening a log.
@@ -74,6 +78,7 @@ func Open(dir string) (*Log, LoadResult, error) {
 		MaxSize:     DefaultMaxFileSize,
 		LockTimeout: DefaultLockTimeout,
 		lock:        flock.New(filepath.Join(dir, lockName)),
+		write:       writeSync,
 	}
 	err := l.locked(func() error {
 		evs, skipped, err := l.readNew()
@@ -238,9 +243,25 @@ func (l *Log) append(events []todo.Event) error {
 			buf.Write(buf2)
 		}
 	}
-	n, err := f.Write(buf.Bytes())
-	l.off += int64(n)
-	if err != nil {
+	if err := l.write(f, buf.Bytes()); err != nil {
+		// Part of the batch may have reached the file, and since readers
+		// skip only a torn last line, other processes would replay the
+		// complete lines as half a transaction. Nobody has read them yet
+		// (we hold the lock), so cut them off. If that fails too, l.off
+		// stays put: the next read then replays the surviving lines here
+		// as well, so at least every process agrees on the state.
+		if terr := f.Truncate(l.off); terr != nil {
+			return errors.Join(err, fmt.Errorf("removing partial write: %w", terr))
+		}
+		return err
+	}
+	l.off += int64(buf.Len())
+	return nil
+}
+
+// writeSync is the default Log.write.
+func writeSync(f *os.File, b []byte) error {
+	if _, err := f.Write(b); err != nil {
 		return err
 	}
 	return f.Sync()

@@ -354,6 +354,23 @@ func TestUndoDepth(t *testing.T) {
 	assert.Equal(t, []string{"item0", "item1"}, titles(s.Board().ViewRows(Now)))
 }
 
+func TestUndoTwiceOnSameItem(t *testing.T) {
+	s, _ := newTestService()
+	it := add(t, s, "a", Now)
+	_, err := s.Edit(it.ID, "b", Now)
+	require.NoError(t, err)
+
+	label, err := s.Undo()
+	require.NoError(t, err)
+	assert.Equal(t, "edit", label)
+	assert.Equal(t, []string{"a"}, titles(s.Board().ViewRows(Now)))
+
+	label, err = s.Undo()
+	require.NoError(t, err, "the edit's undo left the item as the add produced it")
+	assert.Equal(t, "add", label)
+	assert.Empty(t, s.Board().ViewRows(Now))
+}
+
 func TestFailedAppendLeavesStateUnchanged(t *testing.T) {
 	s, log := newTestService()
 	add(t, s, "a", Now)
